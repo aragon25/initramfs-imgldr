@@ -1,0 +1,16 @@
+[Unit]
+Description=Imgldr-Configurator: import settings, clear logs and disable swapfile in image mode
+DefaultDependencies=no
+Before=sysinit.target
+Requires=local-fs.target
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/imgldr-configurator --preserv
+ExecStart=/usr/bin/imgldr-configurator --service
+User=root
+
+[Install]
+WantedBy=sysinit.target
+Alias=imgldr-configurator.service

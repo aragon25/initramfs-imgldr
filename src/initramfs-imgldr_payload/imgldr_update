@@ -1,0 +1,189 @@
+#!/bin/sh
+
+PREREQ="udev fbsplash"
+prereqs()
+{
+	echo "$PREREQ"
+}
+case $1 in
+# get pre-requisites
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+ROOT_FS="___ROOT_FS___"
+ROOT_DEV="___ROOT_DEV___"
+ROOT_MOUNT="false"
+BOOT_MOUNT="false"
+SYS_MOUNT="false"
+OEM_MOUNT="false"
+SYSTEM_UPDATED="false"
+
+wait_for_udev() {
+  command -v udevadm >/dev/null 2>&1 || return 0
+  udevadm settle ${1:+--timeout=$1}
+}
+
+get_cmdline() {
+  for x in $(cat /proc/cmdline)
+  do
+    case $x in
+      root=*)
+        ROOT_FS=${x#root=}
+      ;;
+      SETUPMODE)
+        SETUPMODE=y
+      ;;
+      SAVEDBOOT)
+        SAVEDBOOT=y
+      ;;
+    esac
+  done
+}
+
+get_devices() {
+  if [ "$ROOT_FS" = "___ROOT_FS___" ]; then 
+    echo "... WARNING: UPDATER FAILED TO FIND ROOTFS CMDLINE ENTRY ..."
+    return 0
+  fi
+  wait_for_udev 10
+  n=0
+  until [ $n -ge 10 ]
+  do
+    case "$ROOT_FS" in
+      LABEL=* | UUID=* | PARTLABEL=* | PARTUUID=*)
+        ROOT_DEV="$(blkid -l -t "$ROOT_FS" -o device)" || ROOT_DEV="___ROOT_DEV___"
+      ;;
+    esac
+    if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
+      BOOT_DEV="${ROOT_DEV%?}1"
+      [ "$(blkid -o value -s TYPE $BOOT_DEV 2>/dev/null)" != "vfat" ] && unset BOOT_DEV
+      break
+    fi
+    let "n=n+1"
+    sleep 1.0
+  done
+}
+
+mount_fs() {
+  if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
+    mkdir -p /mnt/tmproot
+    if ! mount -w $ROOT_DEV /mnt/tmproot; then
+      echo "... WARNING: UPDATER FAILED TO MOUNT ROOTFS ..."
+    else
+      ROOT_MOUNT="true"
+    fi
+  else
+    echo "... WARNING: UPDATER FAILED TO FIND ROOTFS PARTITION ..."
+  fi
+  if [ ! -z "${BOOT_DEV}" ]; then 
+    mkdir -p /mnt/tmpboot
+    if ! mount -w $BOOT_DEV /mnt/tmpboot; then
+      echo "... WARNING: UPDATER FAILED TO MOUNT BOOTFS ..."
+    else
+      BOOT_MOUNT="true"
+    fi
+  else
+    echo "... WARNING: UPDATER FAILED TO FIND BOOTFS PARTITION ..."
+  fi
+}
+
+pretty_text() {
+  printf '%s\n%s  %-30s  %s\n' "######################################" "##" "" "##"
+  for i in "${@}"; do
+    printf "%s  %-30s  %s\n" "##" "$i" "##"
+  done
+  printf '%s  %-30s  %s\n%s\n' "##" "" "##" "######################################"
+}
+
+umount_fs() {
+  local attempt=1
+  sync >/dev/null 2>&1
+  while [ "$ROOT_MOUNT" == "true" ] && [ $attempt -le 30 ]; do
+    umount /mnt/tmproot >/dev/null 2>&1 && ROOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
+  done
+  attempt=1
+  while [ "$BOOT_MOUNT" == "true" ] && [ $attempt -le 30 ]; do
+    umount /mnt/tmpboot >/dev/null 2>&1 && BOOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
+  done
+  [ "$ROOT_MOUNT" == "true" ] && echo "Could not umount: /mnt/tmproot"
+  [ "$BOOT_MOUNT" == "true" ] && echo "Could not umount: /mnt/tmpboot"
+}
+
+get_install_script() {
+  local exitcode=0
+  mkdir -p /usr/share/system_update /mnt/sysimg /mnt/oemimg
+  if [ -f /mnt/tmproot/IMAGES/update/install_update ]; then
+    cp -f /mnt/tmproot/IMAGES/update/install_update /usr/share/system_update/install_update
+    chmod +x /usr/share/system_update/install_update
+    return 0
+  fi
+  if [ -f "/mnt/tmproot/IMAGES/update/system.img" ] && ! mount -r -t ext4 /mnt/tmproot/IMAGES/update/system.img /mnt/sysimg; then
+    exitcode=1
+  fi
+  if [ -f "/mnt/tmproot/IMAGES/update/oem.img" ] && ! mount -r -t ext4 /mnt/tmproot/IMAGES/update/oem.img /mnt/oemimg; then
+    exitcode=1
+  fi
+  if [ -f /mnt/oemimg/INFO/install_update ]; then
+    cp -f /mnt/oemimg/INFO/install_update /usr/share/system_update/install_update
+    chmod +x /usr/share/system_update/install_update
+  elif [ -f /mnt/sysimg/INFO/install_update ]; then
+    cp -f /mnt/sysimg/INFO/install_update /usr/share/system_update/install_update
+    chmod +x /usr/share/system_update/install_update
+  else
+    exitcode=1
+  fi
+  umount_fs
+  return $exitcode
+}
+
+do_update() {
+  if [ "$ROOT_MOUNT" = "true" ] && [ "$BOOT_MOUNT" = "true"  ]; then
+    if [ -d /mnt/tmproot/IMAGES/update_tmp ]; then
+      pretty_text "        !!! INFO !!!" "   TMP SYSTEM UPDATE FOUND" "    IT WILL BE REMOVED NOW" "   REDOWNLOAD IT TO INSTALL!"
+      rm -rf /mnt/tmproot/IMAGES/update_tmp >/dev/null 2>&1
+      rm -rf /mnt/tmproot/IMAGES/update >/dev/null 2>&1
+      sleep 3.0
+      return
+    fi
+    if [ -d /mnt/tmproot/IMAGES/update ]; then
+      if [ -n "${SETUPMODE}" ]; then
+        pretty_text "     SYSTEM UPDATE FOUND" "    PLEASE LEAVE SETUPMODE" "        TO INSTALL IT!"
+        sleep 3.0
+        return
+      fi
+      if [ -n "${SAVEDBOOT}" ]; then
+        pretty_text "     SYSTEM UPDATE FOUND" "    PLEASE LEAVE SAVEDBOOT" "        TO INSTALL IT!"
+        sleep 3.0
+        return
+      fi
+      pretty_text "   INSTALLING SYSTEM UPDATE" "   PLEASE DO NOT POWER OFF!" ""
+      SYSTEM_UPDATED="true"
+      if get_install_script; then
+        local success_text="         SUCCESSFULLY"
+        /bin/sh -c /usr/share/system_update/install_update || success_text="         WITH ERRORS!"
+        rm -rf /mnt/tmproot/IMAGES/update >/dev/null 2>&1
+        sleep 2.0
+        pretty_text "    SYSTEM UPDATE FINISHED" "$success_text" "         REBOOTING..."
+        sleep 4.0
+      else
+        rm -rf /mnt/tmproot/IMAGES/update >/dev/null 2>&1
+        sleep 2.0
+        pretty_text "  !!! UPDATE-PACK-ERROR !!!" "Could not get Install script!" "         REBOOTING..."
+        sleep 5.0
+      fi
+    fi
+  elif [ "$ROOT_MOUNT" != "true" ] || [ "$BOOT_MOUNT" != "true"  ]; then
+    pretty_text "     !!! UPDATE-ERROR !!!" "     Partition not found!" "     Update check aborted!"
+    sleep 5.0
+  fi
+}
+
+get_cmdline
+get_devices
+mount_fs
+do_update
+umount_fs
+[ "$SYSTEM_UPDATED" = "true" ] && reboot -f

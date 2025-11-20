@@ -1,0 +1,55 @@
+#!/bin/sh
+
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+case $1 in
+# get pre-requisites
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+for x in $(cat /proc/cmdline)
+do
+  case $x in
+    boot=image)
+      IMAGEBOOT=y
+    ;;
+  esac
+done
+
+[ -z "${IMAGEBOOT}" ] && exit 0
+
+if [ -e "/scripts/init-bottom/overlayroot" ]; then
+  echo "#!/bin/sh" > /scripts/init-bottom/overlayroot
+  echo "exit 0" >> /scripts/init-bottom/overlayroot
+fi
+
+if [ -e "/scripts/local-premount/firstboot" ]; then
+  echo "#!/bin/sh" > /scripts/local-premount/firstboot
+  echo "exit 0" >> /scripts/local-premount/firstboot
+fi
+
+if [ -e "/scripts/local-bottom/imager_fixup" ]; then
+  echo "#!/bin/sh" > /scripts/local-bottom/imager_fixup
+  echo "exit 0" >> /scripts/local-bottom/imager_fixup
+fi
+
+if [ -e "/scripts/init-bottom/plymouth" ]; then
+  echo "#!/bin/sh" > /scripts/init-bottom/plymouth
+  echo "exit 0" >> /scripts/init-bottom/plymouth
+fi
+if [ -e "/scripts/init-premount/plymouth" ]; then
+  echo "#!/bin/sh" > /scripts/init-premount/plymouth
+  echo "exit 0" >> /scripts/init-premount/plymouth
+fi
+if [ -e "/scripts/panic/plymouth" ]; then
+  echo "#!/bin/sh" > /scripts/panic/plymouth
+  echo "exit 0" >> /scripts/panic/plymouth
+fi
+
+exit 0
