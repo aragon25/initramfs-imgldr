@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.7-1] - TESTING
+
+### Added
+
+### Changed
+
+### Removed
+
+### Fixed
+
 ## [2.6-2] - 2025-11-20
 
 ### Changed

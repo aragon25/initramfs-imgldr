@@ -12,7 +12,7 @@
 
 #get some variables
 SCRIPT_TITLE="initramfs-imgldr"
-SCRIPT_VERSION="2.6"
+SCRIPT_VERSION="2.7"
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT_PATH")"

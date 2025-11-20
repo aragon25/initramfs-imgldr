@@ -123,6 +123,20 @@ local_mount_root()
       panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${ROOT_DEV}"
     fi
   fi
+  
+  # Check systemimage (/mnt/tmproot/IMAGES/system.img) or local installation is there
+  if [ ! -f "/mnt/tmproot/IMAGES/system.img" ]; then
+    if [ -f "/mnt/tmproot/sbin/init" ]; then
+      pretty_text "       !!! WARNING !!!" "    system.img not found!" "  running local installation" "          instead..."
+      sync >/dev/null 2>&1
+      if ! mount --move /mnt/tmproot ${rootmnt} 2>&1; then
+        panic_pretty "     !!! KERNEL PANIC !!!" "      Failed to remount" "      root file system!" "${ROOT_DEV}"
+      fi
+      return 0
+    else
+      panic_pretty "     !!! KERNEL PANIC !!!" "    system.img not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
+    fi
+  fi
 
   # Mount bootfs to /mnt/tmpboot
   if ! mount ${BOOT_DEV} /mnt/tmpboot >/dev/null 2>&1; then
@@ -135,7 +149,18 @@ local_mount_root()
   chmod -fR u=rwX,g=rX,o=rX /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES
   chmod -fR u=rwX,g=X,o=X /mnt/tmproot/STATIC
   chown -f 0:0 /mnt/tmproot/STORAGE /mnt/tmproot/OVERLAY
-  chmod -f u=rwX,g=rwX,o=rwX /mnt/tmproot/STORAGE 
+  chmod -f u=rwX,g=rwX,o=rwX /mnt/tmproot/STORAGE
+
+  # auto-reboot early reboot addon
+  if [ -f "/mnt/tmproot/STATIC/auto-reboot-service_reboot" ]; then
+    pretty_text "     !!! INFORMATION !!!" "    Unrecognized shutdown" "          appeared!" "    Rebooting once now..."
+    rm -f /mnt/tmproot/STATIC/auto-reboot-service_reboot
+    sync >/dev/null 2>&1
+    umount /mnt/tmproot >/dev/null 2>&1
+    umount /mnt/tmpboot >/dev/null 2>&1
+    sleep 3
+    reboot -f
+  fi
 
   # Mount system.img image
   if ! mount -r -t ext4 /mnt/tmproot/IMAGES/system.img /mnt/sysimg; then

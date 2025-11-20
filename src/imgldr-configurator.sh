@@ -9,7 +9,7 @@
 export LC_ALL=C
 export LANG=C
 SCRIPT_TITLE="imgldr-configurator"
-SCRIPT_VERSION="2.6"
+SCRIPT_VERSION="2.7"
 SCRIPTDIR="$(readlink -f "$0")"
 SCRIPTNAME="$(basename "$SCRIPTDIR")"
 SCRIPTDIR="$(dirname "$SCRIPTDIR")"
@@ -353,8 +353,8 @@ WPAEOF
 }
 
 function generate_network_config(){
-  local wifi_network="/CONFIG/wifi_network"
-  local lan_network="/CONFIG/lan_network"
+  local wifi_network="/mnt/rootfs/CONFIG/wifi_network"
+  local lan_network="/mnt/rootfs/CONFIG/lan_network"
   local filename
   [ -f /etc/dhcpcd.conf ] && sed -i '/#___IMGLDR_CONFIG_BEGIN___/,/#___IMGLDR_CONFIG_END___/d' /etc/dhcpcd.conf >/dev/null 2>&1
   rm -f /etc/wpa_supplicant/wpa_supplicant*.conf >/dev/null 2>&1
@@ -584,8 +584,8 @@ function cmd_preserv() {
     #generate motd
     generate_motd
     #rebuild_CONFIG_README
-    if [ "$(generate_README short)" != "$(cat '/CONFIG/README' 2>/dev/null)" ]; then
-      echo "$(generate_README short)" > '/CONFIG/README'
+    if [ "$(generate_README short)" != "$(cat '/mnt/rootfs/CONFIG/README' 2>/dev/null)" ]; then
+      echo "$(generate_README short)" > '/mnt/rootfs/CONFIG/README'
     fi
     #rebuildMachineID
     rm -f /etc/machine-id >/dev/null 2>&1
@@ -596,6 +596,10 @@ function cmd_preserv() {
     systemd-machine-id-setup
     chmod 644 /etc/machine-id
     ln -fs /etc/machine-id /var/lib/dbus/machine-id
+    if [ ! -f /mnt/rootfs/STATIC/machine-id ]; then
+      mkdir -p "/mnt/rootfs/STATIC" >/dev/null 2>&1
+      cp -f /etc/machine-id "/mnt/rootfs/STATIC/machine-id" >/dev/null 2>&1
+    fi
     #rebuildSSHKeyPairs
     mkdir -p /etc/ssh
     rm -f /etc/ssh/*_key* >/dev/null 2>&1
@@ -604,10 +608,13 @@ function cmd_preserv() {
       chmod 600 /etc/ssh/*_key*
     else
       ssh-keygen -A
+      mkdir -p "/mnt/rootfs/STATIC/ssh_keys" >/dev/null 2>&1
+      rm -f /mnt/rootfs/STATIC/ssh_keys/*_key* >/dev/null 2>&1
+      cp -f /etc/ssh/*_key* "/mnt/rootfs/STATIC/ssh_keys/" >/dev/null 2>&1
     fi
     #SetupSystemUser
     if [ "$FIRSTUSER" != "" ]; then
-      local admin_conf="/CONFIG/admin_conf"
+      local admin_conf="/mnt/rootfs/CONFIG/admin_conf"
       local sysuser_name=$(config_read "$admin_conf" username "admin")
       local sysuser_pwd=$(config_read "$admin_conf" password '$1$25pgtsyy$hoEN68XR9byPK/RdSElWa/') #admin
       sysuser_name=$(echo "$sysuser_name" | awk 'NR==1 {print $1}' 2>/dev/null)
@@ -636,9 +643,15 @@ function cmd_preserv() {
     # folder: /CONFIG/plymouth-splash/
     # --> is configured by imgldr_boot (image)
     #addSSLfiles
-    local ssl_cert="/STATIC/ssl_selfsigned.cert"
-    local ssl_key="/STATIC/ssl_selfsigned.key"
-    [ -f "/CONFIG/ssl_cert" ] && [ -f "/CONFIG/ssl_key" ] && ssl_cert="/CONFIG/ssl_cert" && ssl_key="/CONFIG/ssl_key"
+    local ssl_cert="/mnt/rootfs/STATIC/ssl_selfsigned.cert"
+    local ssl_key="/mnt/rootfs/STATIC/ssl_selfsigned.key"
+    if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then 
+      mkdir -p "/mnt/rootfs/STATIC" >/dev/null 2>&1
+      rm -f "/mnt/rootfs/STATIC/ssl_selfsigned.cert" >/dev/null 2>&1
+      rm -f "/mnt/rootfs/STATIC/ssl_selfsigned.key" >/dev/null 2>&1
+      openssl req -x509 -newkey rsa:4096 -out "/mnt/rootfs/STATIC/ssl_selfsigned.cert" -keyout "/mnt/rootfs/STATIC/ssl_selfsigned.key" -sha256 -days 3650 -nodes -subj "/" >/dev/null 2>&1
+    fi
+    [ -f "/mnt/rootfs/CONFIG/ssl_cert" ] && [ -f "/mnt/rootfs/CONFIG/ssl_key" ] && ssl_cert="/mnt/rootfs/CONFIG/ssl_cert" && ssl_key="/mnt/rootfs/CONFIG/ssl_key"
     if [ -f "$ssl_cert" ] && [ -f "$ssl_key" ]; then
       mkdir -p /etc/cockpit/ws-certs.d
       mkdir -p /etc/vnc-web
@@ -669,73 +682,73 @@ function cmd_preserv() {
       chmod -f 600 "/etc/ssl/private/selfsigned.key" >/dev/null 2>&1
     fi
     # Configuring realvnc
-    if ls "/CONFIG/realvnc/root/"* >/dev/null 2>&1; then
+    if ls "/mnt/rootfs/CONFIG/realvnc/root/"* >/dev/null 2>&1; then
       mkdir -p /root
       rm -rf "/root/.vnc" >/dev/null 2>&1
-      cp -rf "/CONFIG/realvnc/root" "/root/.vnc"
+      cp -rf "/mnt/rootfs/CONFIG/realvnc/root" "/root/.vnc"
       set_base_perms "/root/.vnc"
     fi
-    if [ "$FIRSTUSER" != "" ] && ls "/CONFIG/realvnc/user/"* >/dev/null 2>&1; then
+    if [ "$FIRSTUSER" != "" ] && ls "/mnt/rootfs/CONFIG/realvnc/user/"* >/dev/null 2>&1; then
       mkdir -p "$FIRSTUSERHOME"
       rm -rf "$FIRSTUSERHOME/.vnc" >/dev/null 2>&1
-      cp -rf "/CONFIG/realvnc/user" "$FIRSTUSERHOME/.vnc"
+      cp -rf "/mnt/rootfs/CONFIG/realvnc/user" "$FIRSTUSERHOME/.vnc"
       set_base_perms "$FIRSTUSERHOME/.vnc"
       chown -Rf $FIRSTUSER:$FIRSTUSERGROUP "$FIRSTUSERHOME/.vnc" >/dev/null 2>&1
     fi
     # Configuring vnc-web
-    if [ -f "/CONFIG/vnc-web_passwd" ] && [ -z "${SETUPMODE}" ]; then
+    if [ -f "/mnt/rootfs/CONFIG/vnc-web_passwd" ] && [ -z "${SETUPMODE}" ]; then
       mkdir -p /etc/vnc-web
       rm -f "/etc/vnc-web/vncpasswd.pass"
-      cp -f "/CONFIG/vnc-web_passwd" "/etc/vnc-web/vncpasswd.pass"
+      cp -f "/mnt/rootfs/CONFIG/vnc-web_passwd" "/etc/vnc-web/vncpasswd.pass"
       chown -f 0:0 "/etc/vnc-web/vncpasswd.pass" >/dev/null 2>&1
       chmod -f 600 "/etc/vnc-web/vncpasswd.pass" >/dev/null 2>&1
     fi
-    if [ -f "/CONFIG/vnc-web_config" ] && [ -z "${SETUPMODE}" ]; then
+    if [ -f "/mnt/rootfs/CONFIG/vnc-web_config" ] && [ -z "${SETUPMODE}" ]; then
       mkdir -p /etc/vnc-web
       rm -f "/etc/vnc-web/vnc.conf"
-      cp -f "/CONFIG/vnc-web_config" "/etc/vnc-web/vnc.conf"
+      cp -f "/mnt/rootfs/CONFIG/vnc-web_config" "/etc/vnc-web/vnc.conf"
       chown -f 0:0 "/etc/vnc-web/vnc.conf" >/dev/null 2>&1
       chmod -f 644 "/etc/vnc-web/vnc.conf" >/dev/null 2>&1
     fi
     # Configuring kiosk
-    if [ -f "/CONFIG/kiosk_config" ] && [ -z "${SETUPMODE}" ]; then
+    if [ -f "/mnt/rootfs/CONFIG/kiosk_config" ] && [ -z "${SETUPMODE}" ]; then
       mkdir -p /etc/rpi-kiosk/kiosk.conf.d
       rm -f "/etc/rpi-kiosk/kiosk.conf.d/kiosk.conf"
-      cp -f "/CONFIG/kiosk_config" "/etc/rpi-kiosk/kiosk.conf.d/kiosk.conf"
+      cp -f "/mnt/rootfs/CONFIG/kiosk_config" "/etc/rpi-kiosk/kiosk.conf.d/kiosk.conf"
       chown -f 0:0 "/etc/rpi-kiosk/kiosk.conf.d/kiosk.conf" >/dev/null 2>&1
       chmod -f 644 "/etc/rpi-kiosk/kiosk.conf.d/kiosk.conf" >/dev/null 2>&1
     fi
     # Configuring auto-reboot
-    if [ -f "/CONFIG/auto-reboot_config" ] && [ -z "${SETUPMODE}" ]; then
+    if [ -f "/mnt/rootfs/CONFIG/auto-reboot_config" ] && [ -z "${SETUPMODE}" ]; then
       rm -f "/etc/auto-reboot.config"
-      cp -f "/CONFIG/auto-reboot_config" "/etc/auto-reboot.config"
+      cp -f "/mnt/rootfs/CONFIG/auto-reboot_config" "/etc/auto-reboot.config"
       chown -f 0:0 "/etc/auto-reboot.config" >/dev/null 2>&1
       chmod -f 644 "/etc/auto-reboot.config" >/dev/null 2>&1
     fi
     # Copy other configurations to image
-    if ls "/CONFIG/misc/"* >/dev/null 2>&1 && [ -z "${SETUPMODE}" ]; then
-      set_base_perms "/CONFIG/misc"
-      cp -af "/CONFIG/misc/"* "/"
+    if ls "/mnt/rootfs/CONFIG/misc/"* >/dev/null 2>&1 && [ -z "${SETUPMODE}" ]; then
+      set_base_perms "/mnt/rootfs/CONFIG/misc"
+      cp -af "/mnt/rootfs/CONFIG/misc/"* "/"
     fi
     # Disable swapfile
     echo "#!/bin/bash" > /usr/sbin/dphys-swapfile
     echo "exit 0" >> /usr/sbin/dphys-swapfile
     # Change hostname
-    local hostname="$(awk 'NR==1 {print $1}' /CONFIG/hostname 2>/dev/null)"
+    local hostname="$(awk 'NR==1 {print $1}' /mnt/rootfs/CONFIG/hostname 2>/dev/null)"
     if [ "$hostname" != "" ]; then
       sed -i "s/127\.0\.1\.1.*$(</etc/hostname)/127.0.1.1\t$hostname/g" /etc/hosts
       echo "$hostname" > /etc/hostname
       hostname -F /etc/hostname
     fi
     # change timezone
-    local timezone="$(awk 'NR==1 {print $1}' /CONFIG/timezone 2>/dev/null)"
+    local timezone="$(awk 'NR==1 {print $1}' /mnt/rootfs/CONFIG/timezone 2>/dev/null)"
     if [ "$timezone" != "" ]; then
       rm -f /etc/localtime
       echo "$timezone" >/etc/timezone
       dpkg-reconfigure -f noninteractive tzdata
     fi
     # change keymap
-    local keymap="$(awk 'NR==1 {print $1}' /CONFIG/keymap 2>/dev/null)"
+    local keymap="$(awk 'NR==1 {print $1}' /mnt/rootfs/CONFIG/keymap 2>/dev/null)"
     if [ "$keymap" != "" ]; then
       rm -f /etc/console-setup/cached_* >/dev/null 2>&1
       cat >/etc/default/keyboard <<EOF
@@ -751,7 +764,7 @@ EOF
       udevadm trigger --subsystem-match=input --action=change
     fi
     ## Change wifi_country & unblock
-    local wifi_country="$(awk 'NR==1 {print $1}' /CONFIG/wifi_country 2>/dev/null)"
+    local wifi_country="$(awk 'NR==1 {print $1}' /mnt/rootfs/CONFIG/wifi_country 2>/dev/null)"
     if [ -n "$wifi_country" ] && grep -q ""^${wifi_country}[[:space:]]"" /usr/share/zoneinfo/iso3166.tab; then
       REGDOMAIN=$wifi_country
       if ! grep -q "cfg80211.ieee80211_regdom=$REGDOMAIN" $BOOTDIR/cmdline.txt; then
@@ -768,7 +781,7 @@ EOF
       done
     fi
     ## network config
-    local network_config="$(awk 'NR==1 {print $1}' /CONFIG/network_config 2>/dev/null)"
+    local network_config="$(awk 'NR==1 {print $1}' /mnt/rootfs/CONFIG/network_config 2>/dev/null)"
     if [ "$network_config" == "dhcpcd" ]; then
       systemctl disable --now NetworkManager.service >/dev/null 2>&1
     else
@@ -776,7 +789,7 @@ EOF
     fi
     generate_network_config
     ## Remote-access configuration
-    local remote_conf="/CONFIG/remote_conf"
+    local remote_conf="/mnt/rootfs/CONFIG/remote_conf"
     local remote_vnc_real=$(config_read "$remote_conf" real_vnc "true")
     local remote_vnc_web=$(config_read "$remote_conf" vnc_web "true")
     local remote_cockpit=$(config_read "$remote_conf" cockpit "true")
@@ -842,9 +855,9 @@ function cmd_reset_ofs() {
 
 function cmd_generate_README() {
   if [ -z "${noOverlay}" ]; then
-    if [ "$(generate_README short)" != "$(cat '/CONFIG/README' 2>/dev/null)" ]; then
-      rm -rf '/CONFIG/README' >/dev/null 2>&1
-      echo "$(generate_README short)" > '/CONFIG/README'
+    if [ "$(generate_README short)" != "$(cat '/mnt/rootfs/CONFIG/README' 2>/dev/null)" ]; then
+      rm -rf '/mnt/rootfs/CONFIG/README' >/dev/null 2>&1
+      echo "$(generate_README short)" > '/mnt/rootfs/CONFIG/README'
       echo "README file recreated!"
     else
       echo "README file is already up to date!"

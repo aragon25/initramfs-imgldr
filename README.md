@@ -31,8 +31,8 @@ Make sure `initramfs-tools` and `cpio` are installed before performing installs 
 If a release `.deb` is available, install it on a test device first:
 
 ```bash
-wget https://github.com/aragon25/initramfs-imgldr/releases/download/v2.6-1/initramfs-imgldr_2.6-1_all.deb
-sudo apt install ./initramfs-imgldr_2.6-1_all.deb
+wget https://github.com/aragon25/initramfs-imgldr/releases/download/v2.7-1/initramfs-imgldr_2.7-1_all.deb
+sudo apt install ./initramfs-imgldr_2.7-1_all.deb
 ```
 
 The package will install the loader script and may place helper files and a configurator service into the appropriate system locations.
