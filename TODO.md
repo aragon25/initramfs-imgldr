@@ -9,4 +9,6 @@
 - [ ] boot=image option obsolet machen (ein skript vorschieben, das boot=image variable setzt)
 - [ ] wenn lokal verfügbar und kein image vorhanden dann automatisch lokal starten.
 - [ ] lokale installation falls vorhanden laden wenn kein sytem.img vorhanden
+- [ ] trixie firstboot skripte deaktivieren
+- [ ] neue firstboot daten importieren
 - [ ] Test new Version 2.7
