@@ -1,5 +1,8 @@
 # TODO
 
+- [ ] trixie: firstboot
+- [ ] trixie: sudo rm /etc/issue.d/IP.issue
+- [ ] trixie: sudo touch /etc/cloud/cloud-init.disabled oder sudo apt remove cloud-guest-utils cloud-init --yes
 - [ ] imageauswahl in initramfs-imgldr skript fixed speichern -> symlink erstellen
 - [ ] imageauswahl in initramfs-boot skript laden von symlink oder falls nicht vorhanden: auswahl zum booten anzeigen
 - [ ] alle skripte in initramfs und temporär kopieren
