@@ -50,8 +50,7 @@ get_devices() {
   fi
   wait_for_udev 10
   n=0
-  until [ $n -ge 10 ]
-  do
+  while [ "$n" -lt 10 ]; do
     case "$ROOT_FS" in
       LABEL=* | UUID=* | PARTLABEL=* | PARTUUID=*)
         ROOT_DEV="$(blkid -l -t "$ROOT_FS" -o device)" || ROOT_DEV="___ROOT_DEV___"
@@ -62,7 +61,7 @@ get_devices() {
       [ "$(blkid -o value -s TYPE $BOOT_DEV 2>/dev/null)" != "vfat" ] && unset BOOT_DEV
       break
     fi
-    let "n=n+1"
+    n=$((n+1))
     sleep 1.0
   done
 }
@@ -70,7 +69,7 @@ get_devices() {
 mount_fs() {
   if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
     mkdir -p /mnt/tmproot
-    if ! mount -w $ROOT_DEV /mnt/tmproot; then
+    if ! mount -w "$ROOT_DEV" /mnt/tmproot; then
       echo "... WARNING: UPDATER FAILED TO MOUNT ROOTFS ..."
     else
       ROOT_MOUNT="true"
@@ -101,15 +100,15 @@ pretty_text() {
 umount_fs() {
   local attempt=1
   sync >/dev/null 2>&1
-  while [ "$ROOT_MOUNT" == "true" ] && [ $attempt -le 30 ]; do
+  while [ "$ROOT_MOUNT" = "true" ] && [ $attempt -le 30 ]; do
     umount /mnt/tmproot >/dev/null 2>&1 && ROOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
   done
   attempt=1
-  while [ "$BOOT_MOUNT" == "true" ] && [ $attempt -le 30 ]; do
+  while [ "$BOOT_MOUNT" = "true" ] && [ $attempt -le 30 ]; do
     umount /mnt/tmpboot >/dev/null 2>&1 && BOOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "$ROOT_MOUNT" == "true" ] && echo "Could not umount: /mnt/tmproot"
-  [ "$BOOT_MOUNT" == "true" ] && echo "Could not umount: /mnt/tmpboot"
+  [ "$ROOT_MOUNT" = "true" ] && echo "Could not umount: /mnt/tmproot"
+  [ "$BOOT_MOUNT" = "true" ] && echo "Could not umount: /mnt/tmpboot"
 }
 
 get_install_script() {
