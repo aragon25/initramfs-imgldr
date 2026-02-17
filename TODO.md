@@ -14,4 +14,5 @@
 - [ ] lokale installation falls vorhanden laden wenn kein sytem.img vorhanden
 - [ ] trixie firstboot skripte deaktivieren
 - [ ] neue firstboot daten importieren
+- [ ] add Sevice output text -> echo "[$SCRIPT_TITLE] TEXT"
 - [ ] Test new Version 2.7
