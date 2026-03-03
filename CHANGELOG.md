@@ -5,12 +5,18 @@ All notable changes to this project will be documented in this file.
 ## [2.7-1] - TESTING
 
 ### Added
+- Raspbian Trixie support
+- early reboot for auto-reboot
 
 ### Changed
+- splitted into kiosk-os and initramfs-imgldr
+- moved from .img to .sqfs system
 
 ### Removed
+- many parts to move to kiosk-os
 
 ### Fixed
+- many bugfixes
 
 ## [2.6-2] - 2025-11-20
 
