@@ -17,15 +17,19 @@ SCRIPT_VERSION="2.7"
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT_PATH")"
 SCRIPT_PATH="$(dirname "$SCRIPT_PATH")"
-UNPACK_DIR="/tmp/unpack-$SCRIPT_NAME"
-BOOTDIR=/boot
+UNPACK_DIR="$(mktemp -d)"
+if mountpoint -q "/boot/firmware"; then 
+  BOOT_DIR=/boot/firmware
+elif mountpoint -q "/boot"; then
+  BOOT_DIR=/boot
+fi
 EXITCODE=0
 
 #!!!RUN RESTRICTIONS!!!
 #only for raspberry pi (rpi5|rpi4|rpi3|all) can combined!
 raspi="all"
-#only for Raspbian OS (bookworm|bullseye|all) can combined!
-rasos="bookworm|bullseye"
+#only for Raspbian OS (trixie|bookworm|bullseye|all) can combined!
+rasos="trixie|bookworm|bullseye"
 #only for cpu architecture (i386|armhf|amd64|arm64) can combined!
 cpuarch=""
 #only for os architecture (32|64) can NOT combined!
@@ -37,20 +41,20 @@ aptpaks=( initramfs-tools cpio sed )
 for i in "$@"
 do
   case $i in
+    --update)
+    cmd="${cmd}update"
+    shift # past argument
+    ;;
     -c|--clean)
     cmd="${cmd}clean"
     shift # past argument
     ;;
-    -u|--update_initramfs)
-    cmd="${cmd}update_initramfs"
+    -i|--initramfs_active)
+    cmd="${cmd}initramfs_active"
     shift # past argument
     ;;
-    -i|--install)
-    cmd="${cmd}install"
-    shift # past argument
-    ;;
-    -r|--remove)
-    cmd="${cmd}remove"
+    -I|--initramfs_inactive)
+    cmd="${cmd}initramfs_inactive"
     shift # past argument
     ;;
     -f|--cmdline_fastboot_active)
@@ -59,30 +63,6 @@ do
     ;;
     -F|--cmdline_fastboot_inactive)
     cmd="${cmd}cmdline_fastboot_inactive"
-    shift # past argument
-    ;;
-    -a|--cmdline_savedboot_active)
-    cmd="${cmd}cmdline_savedboot_active"
-    shift # past argument
-    ;;
-    -A|--cmdline_savedboot_inactive)
-    cmd="${cmd}cmdline_savedboot_inactive"
-    shift # past argument
-    ;;
-    -b|--cmdline_boot_image)
-    cmd="${cmd}cmdline_boot_image"
-    shift # past argument
-    ;;
-    -B|--cmdline_boot_local)
-    cmd="${cmd}cmdline_boot_local"
-    shift # past argument
-    ;;
-    -s|--cmdline_setupmode_active)
-    cmd="${cmd}cmdline_setupmode_active"
-    shift # past argument
-    ;;
-    -S|--cmdline_setupmode_inactive)
-    cmd="${cmd}cmdline_setupmode_inactive"
     shift # past argument
     ;;
     --payload_pack)
@@ -110,28 +90,28 @@ do
     ;;
   esac
 done
-if [[ "$cmd" =~ "install" ]] && [[ "$cmd" =~ "remove" ]]; then
-  echo "option install and remove can not combined!"
+if [[ "$cmd" =~ "initramfs_active" ]] && [[ "$cmd" =~ "initramfs_inactive" ]]; then
+  echo "option initramfs_active and initramfs_inactive can not combined!"
   cmd="help"
 fi
 if [[ "$cmd" =~ "cmdline_fastboot_active" ]] && [[ "$cmd" =~ "cmdline_fastboot_inactive" ]]; then
   echo "option cmdline_fastboot_active and cmdline_fastboot_inactive can not combined!"
   cmd="help"
 fi
-if [[ "$cmd" =~ "cmdline_savedboot_active" ]] && [[ "$cmd" =~ "cmdline_savedboot_inactive" ]]; then
-  echo "option cmdline_savedboot_active and cmdline_savedboot_inactive can not combined!"
+if [[ "$cmd" =~ "cmdline_splash_active" ]] && [[ "$cmd" =~ "cmdline_splash_inactive" ]]; then
+  echo "option cmdline_splash_active and cmdline_splash_inactive can not combined!"
   cmd="help"
 fi
-if [[ "$cmd" =~ "cmdline_boot_image" ]] && [[ "$cmd" =~ "cmdline_boot_local" ]]; then
-  echo "option cmdline_boot_image and cmdline_boot_local can not combined!"
-  cmd="help"
-fi
-if [[ "$cmd" =~ "cmdline_setupmode_active" ]] && [[ "$cmd" =~ "cmdline_setupmode_inactive" ]]; then
-  echo "option cmdline_setupmode_active and cmdline_setupmode_inactive can not combined!"
+if [[ "$cmd" =~ "cmdline_termcursor_active" ]] && [[ "$cmd" =~ "cmdline_termcursor_inactive" ]]; then
+  echo "option cmdline_termcursor_active and cmdline_termcursor_inactive can not combined!"
   cmd="help"
 fi
 if [[ "$cmd" =~ "clean" ]] && [[ "$cmd" != "clean" ]]; then
   echo "option clean can not combined with other options!"
+  cmd="help"
+fi
+if [[ "$cmd" =~ "update" ]] && [[ "$cmd" != "update" ]]; then
+  echo "option update can not combined with other options!"
   cmd="help"
 fi
 if [[ "$cmd" =~ "payload_pack" ]] && [[ "$cmd" != "payload_pack" ]]; then
@@ -202,6 +182,7 @@ function do_check_start() {
     [[ "$rasos_v" =~ "Raspbian" ]] && [[ "$rasos" =~ "all" ]] && rasos_res="true"
     [[ "$rasos_v" =~ "Raspbian" ]] && [[ "$rasos_v" =~ "bullseye" ]] && [[ "$rasos" =~ "bullseye" ]] && rasos_res="true"
     [[ "$rasos_v" =~ "Raspbian" ]] && [[ "$rasos_v" =~ "bookworm" ]] && [[ "$rasos" =~ "bookworm" ]] && rasos_res="true"
+    [[ "$rasos_v" =~ "Raspbian" ]] && [[ "$rasos_v" =~ "trixie" ]] && [[ "$rasos" =~ "trixie" ]] && rasos_res="true"
     if [ "$rasos_res" == "false" ]; then
       echo "You need to run Raspbian OS ($rasos) to run this script! Can not continue with this script!"
       exit 1
@@ -237,38 +218,31 @@ function do_check_start() {
     fi
   fi
   unset IFS
-  #boot partition mount
-  if [ "$(findmnt -n -o FSTYPE /boot 2>/dev/null)" == "vfat" ]; then
-    BOOTDIR=/boot
-  elif [ "$(findmnt -n -o FSTYPE /boot/firmware 2>/dev/null)" == "vfat" ]; then
-    BOOTDIR=/boot/firmware
-  else
+  #check boot partition mount
+  if [ -z "$BOOT_DIR" ]; then 
     echo "Could not find bootpartition! exit."
     exit 1
   fi
   #bootro state
-  if findmnt -n -o OPTIONS $BOOTDIR | egrep "^ro,|,ro,|,ro$" &>/dev/null; then
-    boot_ro="true"
-  else
-    boot_ro="false"
+  if findmnt -n -o OPTIONS "$BOOT_DIR" | egrep "^ro,|,ro,|,ro$" &>/dev/null; then
+    BOOT_READONLY="true"
   fi
 }
 
 function set_boot_rw() {
-  [ "$boot_ro" == "true" ] && mount -o remount,rw $BOOTDIR
+  [ -n "$BOOT_READONLY" ] && mount -o remount,rw $BOOT_DIR
 }
 
 function set_boot_ro() {
-  [ "$boot_ro" == "true" ] && mount -o remount,ro $BOOTDIR
+  [ -n "$BOOT_READONLY" ] && mount -o remount,ro $BOOT_DIR
 }
 
 function extract_files() {
-  local scriptpath="$SCRIPT_PATH/$SCRIPT_NAME"
-  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR + 1; exit 0; }' "$scriptpath")
-  [ -z $PAYLOAD_LINE ] && return 1
+  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR + 1; exit 0; }' "$SCRIPT_PATH")
+  [ -z "$PAYLOAD_LINE" ] && return 1
   rm -rf "$UNPACK_DIR"
   mkdir -p "$UNPACK_DIR"
-  tail -n +${PAYLOAD_LINE} "$scriptpath" | base64 -d | tar -zpvx -C "$UNPACK_DIR" &>/dev/null
+  tail -n +${PAYLOAD_LINE} "$SCRIPT_PATH" | base64 -d | tar -zpvx -C "$UNPACK_DIR" &>/dev/null
   local result=$?
   set_base_perms "$UNPACK_DIR"
   return $result
@@ -280,30 +254,29 @@ function cmd_payload_pack() {
     EXITCODE=1
     return 1
   fi
-  local scriptpath="$SCRIPT_PATH/$SCRIPT_NAME"
   local payload_dirname="$(basename "$SCRIPT_NAME" ".sh")_payload"
-  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR; exit 0; }' "$scriptpath")
-  if [ -d "${SCRIPT_PATH}/${payload_dirname}" ]; then
+  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR; exit 0; }' "$SCRIPT_PATH")
+  if [ -d "${SCRIPT_DIR}/${payload_dirname}" ]; then
     rm -f "/tmp/payload.tar.gz"
-    ( cd "${SCRIPT_PATH}/${payload_dirname}" && tar -czf "/tmp/payload.tar.gz" * )
-    rm -rf "${SCRIPT_PATH}/${payload_dirname}"
+    ( cd "${SCRIPT_DIR}/${payload_dirname}" && tar -czf "/tmp/payload.tar.gz" . )
+    rm -rf "${SCRIPT_DIR}/${payload_dirname}"
   fi
-  if [ -f "$SCRIPT_PATH/payload.tar.gz" ]; then
+  if [ -f "$SCRIPT_DIR/payload.tar.gz" ]; then
     rm -f "/tmp/payload.tar.gz"
-    mv -f "$SCRIPT_PATH/payload.tar.gz" "/tmp/payload.tar.gz"
+    mv -f "$SCRIPT_DIR/payload.tar.gz" "/tmp/payload.tar.gz"
   fi
   if [ ! -f "/tmp/payload.tar.gz" ]; then
     echo "... Could not find 'payload'. EXIT ..."
     EXITCODE=1
     return 1
   fi
-  if [ -z $PAYLOAD_LINE ]; then
-    echo "__PAYLOAD_BEGINS__" >> "$scriptpath"
-    PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR; exit 0; }' "$scriptpath")
+  if [ -z "$PAYLOAD_LINE" ]; then
+    echo "__PAYLOAD_BEGINS__" >> "$SCRIPT_PATH"
+    PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR; exit 0; }' "$SCRIPT_PATH")
   fi
-  cp -f "$scriptpath" "/tmp/payload_tmp"
-  head -n +${PAYLOAD_LINE} /tmp/payload_tmp > "$scriptpath"
-  base64 "/tmp/payload.tar.gz" >> "$scriptpath"
+  cp -f "$SCRIPT_PATH" "/tmp/payload_tmp"
+  head -n +${PAYLOAD_LINE} /tmp/payload_tmp > "$SCRIPT_PATH"
+  base64 "/tmp/payload.tar.gz" >> "$SCRIPT_PATH"
   rm -f "/tmp/payload_tmp"
   rm -f "/tmp/payload.tar.gz"
 }
@@ -314,77 +287,40 @@ function cmd_payload_unpack() {
     EXITCODE=1
     return 1
   fi
-  local scriptpath="$SCRIPT_PATH/$SCRIPT_NAME"
+  local u="${SUDO_USER:-$(logname 2>/dev/null)}"
+  local g="$(id -gn "$u" 2>/dev/null)"
   local payload_dirname="$(basename "$SCRIPT_NAME" ".sh")_payload"
-  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR + 1; exit 0; }' "$scriptpath")
-  [ -z $PAYLOAD_LINE ] && EXITCODE=1 && return 1
-  rm -rf "${SCRIPT_PATH}/${payload_dirname}"
-  mkdir -p "${SCRIPT_PATH}/${payload_dirname}"
-  tail -n +${PAYLOAD_LINE} "$scriptpath" | base64 -d | tar -zpvx -C "${SCRIPT_PATH}/${payload_dirname}" &>/dev/null
-  set_base_perms "${SCRIPT_PATH}/${payload_dirname}"
-  chown -fR $(logname):$(groups $(logname) | awk '{print $3}') "${SCRIPT_PATH}/${payload_dirname}"
+  local PAYLOAD_LINE=$(awk '/^__PAYLOAD_BEGINS__/ { print NR + 1; exit 0; }' "$SCRIPT_PATH")
+  [ -z "$PAYLOAD_LINE" ] && EXITCODE=1 && return 1
+  rm -rf "${SCRIPT_DIR}/${payload_dirname}"
+  mkdir -p "${SCRIPT_DIR}/${payload_dirname}"
+  tail -n +${PAYLOAD_LINE} "$SCRIPT_PATH" | base64 -d | tar -zpvx -C "${SCRIPT_DIR}/${payload_dirname}" &>/dev/null
+  set_base_perms "${SCRIPT_DIR}/${payload_dirname}"
+  [ -n "$u" ] && [ -n "$g" ] && chown -fR "$u:$g" "${SCRIPT_DIR}/${payload_dirname}" 2>/dev/null
 }
 
 function cmd_clean() {
-  cmd_remove
-  cmd_update_initramfs
-  cmd_cmdline_boot_local
-  cmd_cmdline_setupmode_inactive
+  cmd_initramfs_inactive
 }
 
-function cmd_install() {
-  local files_ok="true"
-  cmd_remove &>/dev/null
-  extract_files
-  if [ $? -ne 0 ]; then
-    echo "... Could not install imgldr to initramfs-tools directory! (extract error) ..."
-    EXITCODE=1
-    return 1
+function cmd_update() {
+  if [ -e "/etc/initramfs-tools/scripts/imgldr" ]; then
+    install_initramfs >/dev/null 2>&1
+    update_initramfs >/dev/null 2>&1
   fi
-  mkdir -p "/etc/initramfs-tools/scripts/init-top"
-  cp -af "$UNPACK_DIR/imgldr_update" "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_update" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_fixes" "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
-  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/image"
-  [ -f "/etc/initramfs-tools/scripts/image" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_hwclock" "/etc/initramfs-tools/hooks/imgldr_hwclock"
-  [ -f "/etc/initramfs-tools/hooks/imgldr_hwclock" ] || files_ok="false"
-  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
-  chmod +x "/etc/initramfs-tools/hooks/imgldr_hwclock"
-  rm -rf "$UNPACK_DIR"
-  if [ "$files_ok" == "false" ]; then
-    echo "... Could not install imgldr to initramfs-tools directory! (copy error) ..."
-    cmd_remove &>/dev/null
-    EXITCODE=1
-    return 1
-  fi
-  if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
-    echo overlay >> /etc/initramfs-tools/modules
-  fi
-  echo "installed imgldr to initramfs-tools directory."
 }
 
-function cmd_remove() {
-  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
-  rm -f "/etc/initramfs-tools/hooks/imgldr_hwclock"
-  rm -f "/etc/initramfs-tools/scripts/image"
-  echo "removed imgldr from initramfs-tools directory."
-}
-
-function cmd_update_initramfs() {
+function update_initramfs() {
   local exitcode=0
   local distib="$(lsb_release -d -s 2>/dev/null)"
   [ -f /etc/rpi-issue ] && distib="Raspbian ${distib}"
   set_boot_rw
-  sed -i '/^initramfs /d' $BOOTDIR/config.txt
-  sed -i '/^include config-initramfs.txt/d' $BOOTDIR/config.txt
-  sed -i '/^include config-custom.txt/d' $BOOTDIR/config.txt
-  sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-custom.txt/' $BOOTDIR/config.txt
-  [ -e "$BOOTDIR/config-custom.txt" ] || touch "$BOOTDIR/config-custom.txt"
-  rm -f "$BOOTDIR/config-initramfs.txt" >/dev/null 2>&1
+  sed -i '/^initramfs /d' "$BOOT_DIR/config.txt"
+  sed -i '/^include config-initramfs.txt/d' "$BOOT_DIR/config.txt"
+  sed -i '/^include config-custom.txt/d' "$BOOT_DIR/config.txt"
+  sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-custom.txt/' "$BOOT_DIR/config.txt"
+  [ -e "$BOOT_DIR/config-custom.txt" ] || touch "$BOOT_DIR/config-custom.txt"
+  rm -f "$BOOT_DIR/config-initramfs.txt" >/dev/null 2>&1
   if [[ "$distib" =~ "bullseye" ]]; then
     local suffix_long
     local suffix_short
@@ -397,8 +333,8 @@ function cmd_update_initramfs() {
       if [ -e "/lib/modules/${kernel_version}${suffix_long}" ]; then
         update-initramfs -c -k "${kernel_version}${suffix_long}"
         if [ $? -eq 0 ]; then
-          echo "$BOOTDIR/initrd.img-${kernel_version}${suffix_long} -> $BOOTDIR/initramfs${suffix_short}"
-          mv -f "$BOOTDIR/initrd.img-${kernel_version}${suffix_long}" "$BOOTDIR/initramfs${suffix_short}"
+          echo "$BOOT_DIR/initrd.img-${kernel_version}${suffix_long} -> $BOOT_DIR/initramfs${suffix_short}"
+          mv -f "$BOOT_DIR/initrd.img-${kernel_version}${suffix_long}" "$BOOT_DIR/initramfs${suffix_short}"
         else
           echo "... updating initramfs image for ${kernel_version}${suffix_long} failed ..."
           exitcode=1
@@ -407,13 +343,13 @@ function cmd_update_initramfs() {
     done
     if [ $exitcode -eq 0 ]; then
       local kernel_suf=$([ "$(getconf LONG_BIT 2>/dev/null)" = "64" ] && echo "8" || echo "7l")
-      sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-initramfs.txt/' $BOOTDIR/config.txt
-      [ -f "$BOOTDIR/kernel.img" ] && [ -f "$BOOTDIR/initramfs" ] && cat >>"$BOOTDIR/config-initramfs.txt" <<EOF
+      sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-initramfs.txt/' "$BOOT_DIR/config.txt"
+      [ -f "$BOOT_DIR/kernel.img" ] && [ -f "$BOOT_DIR/initramfs" ] && cat >>"$BOOT_DIR/config-initramfs.txt" <<EOF
 [all]
 kernel=kernel.img
 initramfs initramfs followkernel
 EOF
-      [ -f "$BOOTDIR/kernel7.img" ] && [ -f "$BOOTDIR/initramfs7" ] && cat >>"$BOOTDIR/config-initramfs.txt" <<EOF
+      [ -f "$BOOT_DIR/kernel7.img" ] && [ -f "$BOOT_DIR/initramfs7" ] && cat >>"$BOOT_DIR/config-initramfs.txt" <<EOF
 [pi2]
 kernel=kernel7.img
 initramfs initramfs7 followkernel
@@ -421,7 +357,7 @@ initramfs initramfs7 followkernel
 kernel=kernel7.img
 initramfs initramfs7 followkernel
 EOF
-      [ -f "$BOOTDIR/kernel${kernel_suf}.img" ] && [ -f "$BOOTDIR/initramfs${kernel_suf}" ] && cat >>"$BOOTDIR/config-initramfs.txt" <<EOF
+      [ -f "$BOOT_DIR/kernel${kernel_suf}.img" ] && [ -f "$BOOT_DIR/initramfs${kernel_suf}" ] && cat >>"$BOOT_DIR/config-initramfs.txt" <<EOF
 [pi3+]
 kernel=kernel${kernel_suf}.img
 initramfs initramfs${kernel_suf} followkernel
@@ -429,20 +365,19 @@ initramfs initramfs${kernel_suf} followkernel
 kernel=kernel${kernel_suf}.img
 initramfs initramfs${kernel_suf} followkernel
 EOF
-      echo "[all]" >> "$BOOTDIR/config-initramfs.txt"
     else
       echo "... updating initramfs image/s failed ..."
       EXITCODE=1
       return 1
     fi
-  elif [[ "$distib" =~ "bookworm" ]]; then
+  elif [[ "$distib" =~ "bookworm" ]] || [[ "$distib" =~ "trixie" ]]; then
     mkdir -p "/etc/initramfs-tools/conf.d"
     echo "MODULES=most" > "/etc/initramfs-tools/conf.d/imgldr"
     update-initramfs -u
     if [ $? -eq 0 ]; then
-      sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-initramfs.txt/' $BOOTDIR/config.txt
-      echo "[all]" > "$BOOTDIR/config-initramfs.txt"
-      echo "auto_initramfs=1" >> "$BOOTDIR/config-initramfs.txt"
+      sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-initramfs.txt/' "$BOOT_DIR/config.txt"
+      echo "[all]" > "$BOOT_DIR/config-initramfs.txt"
+      echo "auto_initramfs=1" >> "$BOOT_DIR/config-initramfs.txt"
     else
       echo "... updating initramfs image/s failed ..."
       EXITCODE=1
@@ -453,63 +388,74 @@ EOF
   echo "initramfs image/s updated."
 }
 
+function install_initramfs() {
+  local files_ok="true"
+  remove_initramfs >/dev/null 2>&1
+  extract_files
+  if [ $? -ne 0 ]; then 
+    echo "... Could not install splash to initramfs-tools directory! (extract error) ..."
+    EXITCODE=1
+    return 1
+  fi
+  mkdir -p "/etc/initramfs-tools/scripts/init-top"
+  cp -af "$UNPACK_DIR/imgldr_update" "/etc/initramfs-tools/scripts/init-top/imgldr_update"
+  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_update" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_fixes" "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
+  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
+  [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_hwclock" "/etc/initramfs-tools/hooks/imgldr_hwclock"
+  [ -f "/etc/initramfs-tools/hooks/imgldr_hwclock" ] || files_ok="false"
+  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_update"
+  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
+  chmod +x "/etc/initramfs-tools/hooks/imgldr_hwclock"
+  rm -rf "$UNPACK_DIR"
+  if [ "$files_ok" == "false" ]; then
+    echo "... Could not install imgldr to initramfs-tools directory! (copy error) ..."
+    remove_initramfs &>/dev/null
+    EXITCODE=1
+    return 1
+  fi
+  if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
+    echo overlay >> /etc/initramfs-tools/modules
+  fi
+  if ! grep squashfs /etc/initramfs-tools/modules > /dev/null; then
+    echo squashfs >> /etc/initramfs-tools/modules
+  fi
+  echo "installed imgldr to initramfs-tools directory."
+}
+
+function remove_initramfs() {
+  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_update"
+  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
+  rm -f "/etc/initramfs-tools/hooks/imgldr_hwclock"
+  rm -f "/etc/initramfs-tools/scripts/imgldr"
+  echo "removed imgldr from initramfs-tools directory."
+}
+
+function cmd_initramfs_active() {
+  install_initramfs
+  update_initramfs
+  echo "initramfs imgldr installed!"
+}
+
+function cmd_initramfs_inactive() {
+  remove_initramfs
+  update_initramfs
+  echo "initramfs imgldr removed!"
+}
+
 function cmd_cmdline_fastboot_active() {
+  cmd_cmdline_fastboot_inactive
   set_boot_rw
-  sed -i 's|fastboot[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  sed -i 's/$/ fastboot/g' $BOOTDIR/cmdline.txt
+  sed -i 's/$/ fastboot/g' "$BOOT_DIR/cmdline.txt"
   set_boot_ro
 }
 
 function cmd_cmdline_fastboot_inactive() {
   set_boot_rw
-  sed -i 's|fastboot[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_savedboot_active() {
-  set_boot_rw
-  sed -i 's|SAVEDBOOT[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  sed -i 's/$/ SAVEDBOOT/g' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_savedboot_inactive() {
-  set_boot_rw
-  sed -i 's|SAVEDBOOT[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_boot_image() {
-  set_boot_rw
-  sed -i 's|boot=[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  sed -i 's/$/ boot=image/g' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_boot_local() {
-  set_boot_rw
-  sed -i 's|boot=[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_setupmode_active() {
-  set_boot_rw
-  sed -i 's|SETUPMODE[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
-  sed -i 's/$/ SETUPMODE/g' $BOOTDIR/cmdline.txt
-  set_boot_ro
-}
-
-function cmd_cmdline_setupmode_inactive() {
-  set_boot_rw
-  sed -i 's|SETUPMODE[^ ]* \{0,1\}||g' $BOOTDIR/cmdline.txt
-  sed -i 's|[ \t]*$||' $BOOTDIR/cmdline.txt
+  sed -i -e 's/ fastboot//' "$BOOT_DIR/cmdline.txt"
+  sed -i -e 's/fastboot //' "$BOOT_DIR/cmdline.txt"
   set_boot_ro
 }
 
@@ -521,9 +467,8 @@ function cmd_print_help() {
   echo "Usage: $SCRIPT_NAME [OPTION]"
   echo "$SCRIPT_TITLE v$SCRIPT_VERSION"
   echo " "
-  echo "Adds an initramfs image with boot from image file support."
-  echo "Loads image file: /IMAGES/system.img on bottom"
-  echo "And Loads image file: /IMAGES/oem.img on top (if available)"
+  echo "Lightweight initramfs image-loader installer and manager for Raspberry Pi systems."
+  echo "Loads image file: /IMAGES/system.sqfs and boots from it if available"
   echo " "
   echo "-c, --clean                      remove files from initramfs-tools folder"
   echo "                                 and rebuild image/s"
@@ -549,18 +494,12 @@ function cmd_print_help() {
 [[ "$cmd" == "version" ]] && cmd_print_version
 [[ "$cmd" == "help" ]] && cmd_print_help
 [[ "$cmd" == "clean" ]] && cmd_clean
-[[ "$cmd" =~ "install" ]] && cmd_install
-[[ "$cmd" =~ "remove" ]] && cmd_remove
-[[ "$cmd" =~ "update_initramfs" ]] && cmd_update_initramfs
+[[ "$cmd" == "update" ]] && cmd_update
+[[ "$cmd" =~ "initramfs_active" ]] && cmd_initramfs_active
+[[ "$cmd" =~ "initramfs_inactive" ]] && cmd_initramfs_inactive
 [[ "$cmd" =~ "cmdline_fastboot_active" ]] && cmd_cmdline_fastboot_active
 [[ "$cmd" =~ "cmdline_fastboot_inactive" ]] && cmd_cmdline_fastboot_inactive
-[[ "$cmd" =~ "cmdline_savedboot_active" ]] && cmd_cmdline_savedboot_active
-[[ "$cmd" =~ "cmdline_savedboot_inactive" ]] && cmd_cmdline_savedboot_inactive
-[[ "$cmd" =~ "cmdline_boot_image" ]] && cmd_cmdline_boot_image
-[[ "$cmd" =~ "cmdline_boot_local" ]] && cmd_cmdline_boot_local
-[[ "$cmd" =~ "cmdline_setupmode_active" ]] && cmd_cmdline_setupmode_active
-[[ "$cmd" =~ "cmdline_setupmode_inactive" ]] && cmd_cmdline_setupmode_inactive
-[[ "$cmd" =~ "payload_pack" ]] && cmd_payload_pack
-[[ "$cmd" =~ "payload_unpack" ]] && cmd_payload_unpack
+[[ "$cmd" == "payload_pack" ]] && cmd_payload_pack
+[[ "$cmd" == "payload_unpack" ]] && cmd_payload_unpack
 
 exit $EXITCODE

@@ -62,7 +62,7 @@ local_mount_root()
   ROOT="${DEV}"
   local ROOT_DEV="${ROOT}"
   local BOOT_DEV="${ROOT%?}1"
-  local SETUPMODE
+  local DEVMODE
   local SAVEDBOOT
   local RESET_OFS
   local RESET_ALL
@@ -91,17 +91,8 @@ local_mount_root()
   for x in $(cat /proc/cmdline)
   do
     case $x in
-      SETUPMODE)
-        SETUPMODE=y
-      ;;
-      SAVEDBOOT)
-        SAVEDBOOT=y
-      ;;
-      RESET_OFS)
-        RESET_OFS=y
-      ;;
-      RESET_ALL)
-        RESET_ALL=y
+      DEVMODE)
+        DEVMODE=y
       ;;
       FIRSTBOOT|*firstboot*)
         FIRSTBOOT=y
@@ -124,17 +115,17 @@ local_mount_root()
     fi
   fi
   
-  # Check systemimage (/mnt/tmproot/IMAGES/system.img) or local installation is there
-  if [ ! -f "/mnt/tmproot/IMAGES/system.img" ]; then
+  # Check systemimage (/mnt/tmproot/IMAGES/system.sqfs) or local installation is there
+  if [ ! -f "/mnt/tmproot/IMAGES/system.sqfs" ]; then
     if [ -f "/mnt/tmproot/sbin/init" ]; then
-      pretty_text "       !!! WARNING !!!" "    system.img not found!" "  running local installation" "          instead..."
+      pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
       sync >/dev/null 2>&1
       if ! mount --move /mnt/tmproot ${rootmnt} 2>&1; then
         panic_pretty "     !!! KERNEL PANIC !!!" "      Failed to remount" "      root file system!" "${ROOT_DEV}"
       fi
       return 0
     else
-      panic_pretty "     !!! KERNEL PANIC !!!" "    system.img not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
+      panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
     fi
   fi
 
@@ -144,17 +135,28 @@ local_mount_root()
   fi
 
   # Build rootfs base directory structure
-  mkdir -p /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES /mnt/tmproot/STORAGE /mnt/tmproot/STATIC /mnt/tmproot/OVERLAY
-  chown -fR 0:0 /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES /mnt/tmproot/STATIC
+  mkdir -p /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES /mnt/tmproot/USERDATA /mnt/tmproot/STATIC
+  mkdir -p /mnt/tmproot/USERDATA/PERSIST_RAM_STORAGE /mnt/tmproot/USERDATA/OVERLAY/etc /mnt/tmproot/USERDATA/OVERLAY/home /mnt/tmproot/USERDATA/OVERLAY/var
+  chown -fR 0:0 /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES /mnt/tmproot/STATIC_SYSTEMFILES
   chmod -fR u=rwX,g=rX,o=rX /mnt/tmproot/CONFIG /mnt/tmproot/IMAGES
-  chmod -fR u=rwX,g=X,o=X /mnt/tmproot/STATIC
-  chown -f 0:0 /mnt/tmproot/STORAGE /mnt/tmproot/OVERLAY
-  chmod -f u=rwX,g=rwX,o=rwX /mnt/tmproot/STORAGE
+  chmod -fR u=rwX,g=X,o=X /mnt/tmproot/STATIC_SYSTEMFILES
+  chown -f 0:0 /mnt/tmproot/USERDATA
+  chmod -f u=rwX,g=rX,o=rX /mnt/tmproot/USERDATA
+  chown -f 0:0 /mnt/tmproot/USERDATA/PERSIST_RAM_STORAGE
+  chmod -f u=rwX,g=rwX,o=rX /mnt/tmproot/USERDATA/PERSIST_RAM_STORAGE
+  chown -f 0:0 /mnt/tmproot/USERDATA/OVERLAY
+  chmod -f u=rwX,g=rX,o=rX /mnt/tmproot/USERDATA/OVERLAY
+  chown -f 0:0 /mnt/tmproot/USERDATA/OVERLAY/etc
+  chmod -f u=rwX,g=rX,o=rX /mnt/tmproot/USERDATA/OVERLAY/etc
+  chown -f 0:0 /mnt/tmproot/USERDATA/OVERLAY/home
+  chmod -f u=rwX,g=rX,o=rX /mnt/tmproot/USERDATA/OVERLAY/home
+  chown -f 0:0 /mnt/tmproot/USERDATA/OVERLAY/var
+  chmod -f u=rwX,g=rX,o=rX /mnt/tmproot/USERDATA/OVERLAY/var
 
   # auto-reboot early reboot addon
-  if [ -f "/mnt/tmproot/STATIC/auto-reboot-service_reboot" ]; then
+  if [ -f "/mnt/tmproot/STATIC_SYSTEMFILES/auto-reboot-service_reboot" ]; then
     pretty_text "     !!! INFORMATION !!!" "    Unrecognized shutdown" "          appeared!" "    Rebooting once now..."
-    rm -f /mnt/tmproot/STATIC/auto-reboot-service_reboot
+    rm -f /mnt/tmproot/STATIC_SYSTEMFILES/auto-reboot-service_reboot
     sync >/dev/null 2>&1
     umount /mnt/tmproot >/dev/null 2>&1
     umount /mnt/tmpboot >/dev/null 2>&1
@@ -162,18 +164,18 @@ local_mount_root()
     reboot -f
   fi
 
-  # Mount system.img image
-  if ! mount -r -t ext4 /mnt/tmproot/IMAGES/system.img /mnt/sysimg; then
-    panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" " {ROOT_DEV}/IMAGES/system.img" "as root file system (overlay)."
+  # Mount system.sqfs image
+  if ! mount -t squashfs /mnt/tmproot/IMAGES/system.sqfs /mnt/sysimg; then
+    panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" " {ROOT_DEV}/IMAGES/system.sqfs" "     as root file system."
   fi
 
-  # Mount oem.img image
+  # Mount oem.sqfs image
   overlay_mnt="/mnt/sysimg/SYSTEM"
-  if [ -f /mnt/tmproot/IMAGES/oem.img ] && [ -z "${SETUPMODE}" ]; then
-    if ! mount -r -t ext4 /mnt/tmproot/IMAGES/oem.img /mnt/oemimg; then
-      panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "  {ROOT_DEV}/IMAGES/oem.img" "as root file system (overlay)."
+  if [ -f /mnt/tmproot/IMAGES/oem.sqfs ] && [ -z "${DEVMODE}" ]; then
+    if ! mount -t squashfs /mnt/tmproot/IMAGES/oem.sqfs /mnt/oemimg; then
+      panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "  {ROOT_DEV}/IMAGES/oem.sqfs" "     as root file system."
     elif [ -f /mnt/sysimg/INFO/sysinfo ] && [ "$(cat /mnt/sysimg/INFO/sysinfo 2>/dev/null)" != "$(cat /mnt/oemimg/INFO/sysinfo 2>/dev/null)" ]; then
-      pretty_text "       !!! WARNING !!!" "    system.img and oem.img" "        do not match!" "     Ignoring oem.img..."
+      pretty_text "       !!! WARNING !!!" "    system.sqfs and oem.sqfs" "        do not match!" "     Ignoring oem.sqfs..."
       sleep 5
       umount /mnt/oemimg >/dev/null 2>&1
     else
@@ -181,8 +183,8 @@ local_mount_root()
     fi
   fi
 
-  #restore boot partition if needed
-  if [ -n "${RESET_OFS}" ] || [ -n "${RESET_ALL}" ] || ([ -z "${SETUPMODE}" ] && [ -z "${SAVEDBOOT}" ]) || ([ -n "${SETUPMODE}" ] && [ ! -f /mnt/tmproot/STATIC/setupboot ]); then
+  #Restore boot partition if needed
+  if [ -n "${RESET_OFS}" ] || [ -n "${RESET_ALL}" ] || ([ -z "${DEVMODE}" ] && [ -z "${SAVEDBOOT}" ]) || ([ -n "${DEVMODE}" ] && [ ! -f /mnt/tmproot/STATIC_SYSTEMFILES/setupboot ]); then
     mkdir -p /mnt/sysimg/BOOT
     boot_bak="/mnt/sysimg/BOOT"
     [ -d /mnt/oemimg/BOOT ] && boot_bak="/mnt/oemimg/BOOT"
@@ -214,6 +216,10 @@ local_mount_root()
     fi
   fi
 
+  #Umount boot partition
+  sync >/dev/null 2>&1
+  umount /mnt/tmpboot >/dev/null 2>&1
+
   # Check overlay module
   if ! modprobe overlay; then
     [ -f "/mnt/sysimg/SYSTEM/lib/modules/$(uname -r)/kernel/fs/overlayfs/overlay.ko" ] && overlay_mod="/mnt/sysimg/SYSTEM/lib/modules/$(uname -r)/kernel/fs/overlayfs/overlay.ko"
@@ -225,38 +231,38 @@ local_mount_root()
   fi
 
   # Mount the overlay in /mnt/overlay
-  if [ -z "${SETUPMODE}" ] || [ -n "${FIRSTBOOT}" ]; then
+  if [ -z "${DEVMODE}" ] || [ -n "${FIRSTBOOT}" ]; then
     if [ -n "${SAVEDBOOT}" ]; then
       mount -o bind /mnt/tmproot/OVERLAY /mnt/overlay
-      echo "1" > /mnt/tmproot/STATIC/savedboot
+      echo "1" > /mnt/tmproot/STATIC_SYSTEMFILES/savedboot
     else
       mount -t tmpfs tmpfs /mnt/overlay
-      [ -f /mnt/tmproot/STATIC/savedboot ] && RESET_OFS=y
+      [ -f /mnt/tmproot/STATIC_SYSTEMFILES/savedboot ] && RESET_OFS=y
     fi
-    [ -f /mnt/tmproot/STATIC/setupboot ] && RESET_OFS=y
+    [ -f /mnt/tmproot/STATIC_SYSTEMFILES/setupboot ] && RESET_OFS=y
     if [ -n "${RESET_OFS}" ] || [ -n "${RESET_ALL}" ]; then
       pretty_text "" " ...Restoring factory data..." ""
       echo " "
       ls "/mnt/tmproot/OVERLAY/"* >/dev/null 2>&1 && echo "Delete saved overlay data..." && find /mnt/tmproot/OVERLAY -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
       [ -e /mnt/tmproot/SETUP ] && echo "Delete saved SETUP data..." && rm -rf /mnt/tmproot/SETUP
       [ -n "${RESET_ALL}" ] && ls "/mnt/tmproot/STORAGE/"* >/dev/null 2>&1 && echo "Delete STORAGE data..." && find /mnt/tmproot/STORAGE -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
-      [ -f /mnt/tmproot/STATIC/savedboot ] && rm -f /mnt/tmproot/STATIC/savedboot
-      [ -f /mnt/tmproot/STATIC/setupboot ] && rm -f /mnt/tmproot/STATIC/setupboot
+      [ -f /mnt/tmproot/STATIC_SYSTEMFILES/savedboot ] && rm -f /mnt/tmproot/STATIC_SYSTEMFILES/savedboot
+      [ -f /mnt/tmproot/STATIC_SYSTEMFILES/setupboot ] && rm -f /mnt/tmproot/STATIC_SYSTEMFILES/setupboot
       sed -i 's|RESET_OFS[^ ]* \{0,1\}||g' /mnt/tmpboot/cmdline.txt >/dev/null 2>&1
       sed -i 's|RESET_ALL[^ ]* \{0,1\}||g' /mnt/tmpboot/cmdline.txt >/dev/null 2>&1
       sed -i 's|[ \t]*$||' /mnt/tmpboot/cmdline.txt
       echo "... FINISHED! Continue booting..."
     fi
-  elif [ -n "${SETUPMODE}" ]; then
+  elif [ -n "${DEVMODE}" ]; then
     pretty_text "       !!! WARNING !!!" "     YOU ARE IN SETUP MODE" ""
     echo " "
-    [ -f /mnt/tmproot/IMAGES/oem.img ] && echo "INFO: oem.img image file is ignored in this mode!"
-    if [ -n "${SETUPMODE}" ] && [ -n "${SAVEDBOOT}" ]; then
+    [ -f /mnt/tmproot/IMAGES/oem.sqfs ] && echo "INFO: oem.sqfs image file is ignored in this mode!"
+    if [ -n "${DEVMODE}" ] && [ -n "${SAVEDBOOT}" ]; then
       echo "Exiting saved boot..."
       sed -i 's|SAVEDBOOT[^ ]* \{0,1\}||g' /mnt/tmpboot/cmdline.txt >/dev/null 2>&1
       sed -i 's|[ \t]*$||' /mnt/tmpboot/cmdline.txt
       ls "/mnt/tmproot/OVERLAY/"* >/dev/null 2>&1 && echo "Delete saved overlay data..." && find /mnt/tmproot/OVERLAY -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
-      [ -f /mnt/tmproot/STATIC/savedboot ] && rm -f /mnt/tmproot/STATIC/savedboot
+      [ -f /mnt/tmproot/STATIC_SYSTEMFILES/savedboot ] && rm -f /mnt/tmproot/STATIC_SYSTEMFILES/savedboot
       sync >/dev/null 2>&1
       umount /mnt/overlay >/dev/null 2>&1
       umount /mnt/oemimg >/dev/null 2>&1
@@ -267,12 +273,12 @@ local_mount_root()
       sleep 5
       reboot -f
     fi
-    echo "1" > /mnt/tmproot/STATIC/setupboot
+    echo "1" > /mnt/tmproot/STATIC_SYSTEMFILES/setupboot
     mkdir -p /mnt/tmproot/SETUP
     if ls "/mnt/tmproot/SETUP/"* >/dev/null 2>&1; then
       response="x"
       echo "SETUP data was found! what would you like to do with that?"
-      echo "ignore? (i), remove? (r), exit SETUPMODE? (e), console? (c), finish it and poweroff? (f)"
+      echo "ignore? (i), remove? (r), exit DEVMODE? (e), console? (c), finish it and poweroff? (f)"
       while [ "${response}" != "i" ] && [ "${response}" != "r" ] && [ "${response}" != "e" ] && [ "${response}" != "c" ] && [ "${response}" != "f" ]; do
         read -n 1 -s response
       done
@@ -288,8 +294,8 @@ local_mount_root()
       fi
       if [ "$response" = "e" ]; then
         echo " "
-        echo "Exiting SETUPMODE..."
-        sed -i 's|SETUPMODE[^ ]* \{0,1\}||g' /mnt/tmpboot/cmdline.txt >/dev/null 2>&1
+        echo "Exiting DEVMODE..."
+        sed -i 's|DEVMODE[^ ]* \{0,1\}||g' /mnt/tmpboot/cmdline.txt >/dev/null 2>&1
         sed -i 's|[ \t]*$||' /mnt/tmpboot/cmdline.txt
         [ -e /mnt/tmproot/SETUP ] && rm -rf /mnt/tmproot/SETUP
       fi
@@ -359,9 +365,6 @@ local_mount_root()
   [ -f /mnt/oemimg/INFO/oeminfo ] && cp -f /mnt/oemimg/INFO/oeminfo ${rootmnt}/etc/imageinfo/oeminfo
   [ -f /mnt/sysimg/INFO/updateserver ] && cp -f /mnt/sysimg/INFO/updateserver ${rootmnt}/etc/imageinfo/updateserver
 
-  #umount boot partition
-  umount /mnt/tmpboot >/dev/null 2>&1
-
   # Configuring fstab in overlay
   mkdir -p ${rootmnt}/mnt/rootfs
   rm -rf ${rootmnt}/STORAGE ${rootmnt}/IMAGES ${rootmnt}/CONFIG ${rootmnt}/STATIC
@@ -394,7 +397,7 @@ local_mount_root()
   fi
 
   # Configuring custom-plymouth
-  if ls "/mnt/tmproot/CONFIG/plymouth-splash/"* >/dev/null 2>&1 && [ -z "${SETUPMODE}" ]; then
+  if ls "/mnt/tmproot/CONFIG/plymouth-splash/"* >/dev/null 2>&1 && [ -z "${DEVMODE}" ]; then
     local plymouth_themename=''
     for filepath in "/mnt/tmproot/CONFIG/plymouth-splash/"*".plymouth"; do
       plymouth_themename="$(basename "${filepath}" .plymouth)"
