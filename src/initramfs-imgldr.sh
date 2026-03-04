@@ -98,14 +98,6 @@ if [[ "$cmd" =~ "cmdline_fastboot_active" ]] && [[ "$cmd" =~ "cmdline_fastboot_i
   echo "option cmdline_fastboot_active and cmdline_fastboot_inactive can not combined!"
   cmd="help"
 fi
-if [[ "$cmd" =~ "cmdline_splash_active" ]] && [[ "$cmd" =~ "cmdline_splash_inactive" ]]; then
-  echo "option cmdline_splash_active and cmdline_splash_inactive can not combined!"
-  cmd="help"
-fi
-if [[ "$cmd" =~ "cmdline_termcursor_active" ]] && [[ "$cmd" =~ "cmdline_termcursor_inactive" ]]; then
-  echo "option cmdline_termcursor_active and cmdline_termcursor_inactive can not combined!"
-  cmd="help"
-fi
 if [[ "$cmd" =~ "clean" ]] && [[ "$cmd" != "clean" ]]; then
   echo "option clean can not combined with other options!"
   cmd="help"
@@ -393,21 +385,18 @@ function install_initramfs() {
   remove_initramfs >/dev/null 2>&1
   extract_files
   if [ $? -ne 0 ]; then 
-    echo "... Could not install splash to initramfs-tools directory! (extract error) ..."
+    echo "... Could not install imgldr to initramfs-tools directory! (extract error) ..."
     EXITCODE=1
     return 1
   fi
   mkdir -p "/etc/initramfs-tools/scripts/init-top"
-  cp -af "$UNPACK_DIR/imgldr_update" "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_update" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_fixes" "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
-  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_early" "/etc/initramfs-tools/scripts/init-top/imgldr_early"
+  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_early" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_hwclock" "/etc/initramfs-tools/hooks/imgldr_hwclock"
   [ -f "/etc/initramfs-tools/hooks/imgldr_hwclock" ] || files_ok="false"
-  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
+  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_early"
   chmod +x "/etc/initramfs-tools/hooks/imgldr_hwclock"
   rm -rf "$UNPACK_DIR"
   if [ "$files_ok" == "false" ]; then
@@ -426,8 +415,7 @@ function install_initramfs() {
 }
 
 function remove_initramfs() {
-  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_update"
-  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_fixes"
+  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_early"
   rm -f "/etc/initramfs-tools/hooks/imgldr_hwclock"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
   echo "removed imgldr from initramfs-tools directory."

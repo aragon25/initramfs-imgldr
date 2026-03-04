@@ -96,7 +96,7 @@ local_mount_root()
       ;;
       FIRSTBOOT|*firstboot*)
         FIRSTBOOT=y
-        init=/usr/lib/initramfs-imgldr/imgldr-init
+        init=/usr/lib/kiosk-os/kiosk-os-init
       ;;
     esac
   done
