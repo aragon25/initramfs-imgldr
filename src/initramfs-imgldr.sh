@@ -16,7 +16,7 @@ SCRIPT_VERSION="2.7"
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT_PATH")"
-SCRIPT_PATH="$(dirname "$SCRIPT_PATH")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 UNPACK_DIR="$(mktemp -d)"
 if mountpoint -q "/boot/firmware"; then 
   BOOT_DIR=/boot/firmware
@@ -389,15 +389,12 @@ function install_initramfs() {
     EXITCODE=1
     return 1
   fi
-  mkdir -p "/etc/initramfs-tools/scripts/init-top"
-  cp -af "$UNPACK_DIR/imgldr_early" "/etc/initramfs-tools/scripts/init-top/imgldr_early"
-  [ -f "/etc/initramfs-tools/scripts/init-top/imgldr_early" ] || files_ok="false"
+  mkdir -p "/etc/initramfs-tools/scripts/init-premount"
+  cp -af "$UNPACK_DIR/imgldr_premount" "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
+  [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_hwclock" "/etc/initramfs-tools/hooks/imgldr_hwclock"
-  [ -f "/etc/initramfs-tools/hooks/imgldr_hwclock" ] || files_ok="false"
-  chmod +x "/etc/initramfs-tools/scripts/init-top/imgldr_early"
-  chmod +x "/etc/initramfs-tools/hooks/imgldr_hwclock"
+  chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -rf "$UNPACK_DIR"
   if [ "$files_ok" == "false" ]; then
     echo "... Could not install imgldr to initramfs-tools directory! (copy error) ..."
@@ -415,8 +412,7 @@ function install_initramfs() {
 }
 
 function remove_initramfs() {
-  rm -f "/etc/initramfs-tools/scripts/init-top/imgldr_early"
-  rm -f "/etc/initramfs-tools/hooks/imgldr_hwclock"
+  rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
   echo "removed imgldr from initramfs-tools directory."
 }
@@ -458,21 +454,14 @@ function cmd_print_help() {
   echo "Lightweight initramfs image-loader installer and manager for Raspberry Pi systems."
   echo "Loads image file: /IMAGES/system.sqfs and boots from it if available"
   echo " "
-  echo "-c, --clean                      remove files from initramfs-tools folder"
-  echo "                                 and rebuild image/s"
-  echo "-i, --install                    install files to initramfs-tools folder"
-  echo "-r, --remove                     remove files from initramfs-tools folder"
-  echo "-u, --update_initramfs           rebuild initramfs image/s"
-  echo "-f, --cmdline_fastboot_active    set fastboot flag in cmdline.txt"
-  echo "-F, --cmdline_fastboot_inactive  unset fastboot flag in cmdline.txt"
-  echo "-a, --cmdline_savedboot_active   set SAVEDBOOT flag in cmdline.txt"
-  echo "-A, --cmdline_savedboot_inactive unset SAVEDBOOT flag in cmdline.txt"
-  echo "-b, --cmdline_boot_image         set bootmode to image system in cmdline.txt"
-  echo "-B, --cmdline_boot_local         set bootmode to local system in cmdline.txt"
-  echo "-s, --cmdline_setupmode_active   set SETUPMODE flag in cmdline.txt"
-  echo "-S, --cmdline_setupmode_inactive unset SETUPMODE flag in cmdline.txt"
-  echo "-v, --version                    print version info and exit"
-  echo "-h, --help                       print this help and exit"
+  echo "-c, --clean                       remove initramfs-splash, unset cmdline splash,"
+  echo "                                  unset cmdline hide term cursor and rebuild image"
+  echo "-i, --initramfs_active            install files to initramfs and rebuild image"
+  echo "-I, --initramfs_inactive          remove files from initramfs and rebuild image"
+  echo "-f, --cmdline_fastboot_active     set fastboot flag in cmdline.txt"
+  echo "-F, --cmdline_fastboot_inactive   unset fastboot flag in cmdline.txt"
+  echo "-v, --version                     print version info and exit"
+  echo "-h, --help                        print this help and exit"
   echo " "
   echo "Author: aragon25 <aragon25.01@web.de>"
 }
