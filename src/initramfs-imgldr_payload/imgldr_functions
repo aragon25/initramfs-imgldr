@@ -1,11 +1,4 @@
-export ROOT_CMDLINE="___ROOT_CMDLINE___"
-export ROOT_DEV="___ROOT_DEV___"
-export BOOT_DEV="___BOOT_DEV___"
-export ROOT_MOUNT="false"
-export BOOT_MOUNT="false"
-export SQFS_MOUNT="false"
-
-get_root_cmdline() {
+imgldr_get_root_cmdline() {
   for x in $(cat /proc/cmdline)
   do
     case $x in
@@ -16,16 +9,16 @@ get_root_cmdline() {
   done
 }
 
-wait_for_udev() {
+imgldr_wait_for_udev() {
   command -v udevadm >/dev/null 2>&1 || return 0
   udevadm settle ${1:+--timeout=$1}
 }
 
-get_devices() {
+imgldr_get_devices() {
   if [ "$ROOT_CMDLINE" = "___ROOT_CMDLINE___" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
   fi
-  wait_for_udev 10
+  imgldr_wait_for_udev 10
   n=0
   while [ "$n" -lt 10 ]; do
     case "$ROOT_CMDLINE" in
@@ -162,14 +155,3 @@ imgldr_do_reboot() {
   sleep 5
   reboot -f
 }
-
-get_root_cmdline
-get_devices
-export -f imgldr_pretty_text
-export -f imgldr_shell_console
-export -f imgldr_panic_pretty
-export -f imgldr_mount_fs
-export -f imgldr_umount_fs
-export -f imgldr_check_fs
-export -f imgldr_do_reboot
-export -f imgldr_do_poweroff

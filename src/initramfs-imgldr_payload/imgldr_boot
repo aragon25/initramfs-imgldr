@@ -8,8 +8,8 @@
 
 . /scripts/local
 
-if [ -f /scripts/imgldr_functions ]; then
-  . /scripts/imgldr_functions
+if [ -f /scripts/imgldr_vars ]; then
+  . /scripts/imgldr_vars
 else
   echo "... ERROR: IMGLDR FAILED TO LOAD FUNCTIONS ..."
   if command -v setsid >/dev/null 2>&1; then
