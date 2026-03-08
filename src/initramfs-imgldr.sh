@@ -414,6 +414,7 @@ function install_initramfs() {
 function remove_initramfs() {
   rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
+  rm -f "/etc/initramfs-tools/conf.d/imgldr" >/dev/null 2>&1
   echo "removed imgldr from initramfs-tools directory."
 }
 
