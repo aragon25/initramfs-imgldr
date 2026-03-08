@@ -8,19 +8,10 @@
 
 . /scripts/local
 
-export ROOT_MOUNT="false"
-export BOOT_MOUNT="false"
-export SQFS_MOUNT="false"
-
-pretty_text() {
-  printf '%s\n%s  %-30s  %s\n' "######################################" "##" "" "##"
-  for i in "${@}"; do
-    printf "%s  %-30s  %s\n" "##" "$i" "##"
-  done
-  printf '%s  %-30s  %s\n%s\n' "##" "" "##" "######################################"
-}
-
-shell_console() {
+if [ -f /scripts/imgldr_functions ]; then
+  . /scripts/imgldr_functions
+else
+  echo "... ERROR: IMGLDR FAILED TO LOAD FUNCTIONS ..."
   if command -v setsid >/dev/null 2>&1; then
     read -r console rest </proc/consoles
     if [ "${console}" = "tty0" ]; then
@@ -30,55 +21,40 @@ shell_console() {
   else
     sh -i </dev/console >/dev/console 2>&1
   fi
-}
-
-panic_pretty() {
-  [ $# -ne 0 ] && pretty_text "${@}"
-  local response="x"
-  echo " "
-  echo "What would you do?"
-  echo "enter console? (c), reboot? (r), poweroff? (p)"
-  while [ "${response}" != "c" ] && [ "${response}" != "r" ] && [ "${response}" != "p" ]; do
-    read -n 1 -s response
-  done
-  if [ "$response" = "c" ]; then
-    shell_console
-  fi
-  if [ "$response" = "r" ]; then
-    echo "Reboot in 5 seconds..."
-    sleep 5
-    reboot -f
-  fi
-  if [ "$response" = "p" ]; then
-    echo "Power off in 5 seconds..."
-    sleep 5
-    poweroff -f
-  fi
-}
+fi
 
 local_mount_root()
 {
   local_top
   if [ -z "${ROOT}" ]; then
-    panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
   fi
   local_device_setup "${ROOT}" "root file system"
   ROOT="${DEV}"
-  local ROOT_DEV="${ROOT}"
-  local BOOT_DEV="${ROOT%?}1"
+  local root_dev="${ROOT}"
+  local boot_dev="${ROOT%?}1"
   local mount_script="/usr/share/imgldr/mount"
   local postmount_script="/usr/share/imgldr/postmount"
 
   # Get the root filesystem type if not set
   if [ -z "${ROOTFSTYPE}" ] || [ "${ROOTFSTYPE}" = auto ]; then
-    FSTYPE=$(get_fstype "${ROOT_DEV}")
+    FSTYPE=$(get_fstype "${root_dev}")
   else
     FSTYPE=${ROOTFSTYPE}
   fi
 
   local_premount
 
-  modprobe ${FSTYPE}
+  # Check needed modules
+  if ! modprobe overlay; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "   Failed to load overlayfs" "        kernel module"
+  fi
+  if ! modprobe squashfs; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to load squashfs" "        kernel module"
+  fi
+  if ! modprobe ${FSTYPE}; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to load ${FSTYPE}" "        kernel module"
+  fi
   checkfs ${ROOT} root "${FSTYPE}"
 
   # Create directories for mountpoints
@@ -86,40 +62,31 @@ local_mount_root()
 
   # Mount rootfs to /mnt/tmproot
   if [ "${FSTYPE}" != "unknown" ]; then
-    if mount -t ${FSTYPE} ${ROOT_DEV} /mnt/tmproot >/dev/null 2>&1; then
+    if mount -t ${FSTYPE} ${root_dev} /mnt/tmproot >/dev/null 2>&1; then
       ROOT_MOUNT="/mnt/tmproot"
     else
-      panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${ROOT_DEV}"
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${root_dev}"
     fi
   else
-    if mount ${ROOT_DEV} /mnt/tmproot >/dev/null 2>&1; then
+    if mount ${root_dev} /mnt/tmproot >/dev/null 2>&1; then
       ROOT_MOUNT="/mnt/tmproot"
     else
-      panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${ROOT_DEV}"
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${root_dev}"
     fi
   fi
 
   # Mount bootfs to /mnt/tmpboot
-  if mount ${BOOT_DEV} /mnt/tmpboot >/dev/null 2>&1; then
+  if mount ${boot_dev} /mnt/tmpboot >/dev/null 2>&1; then
     BOOT_MOUNT="/mnt/tmpboot"
   else
-    panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      boot file system!" "${BOOT_DEV}"
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      boot file system!" "${boot_dev}"
   fi
 
   # Mount system.sqfs image
-  if mount -t squashfs /mnt/tmproot/IMAGES/system.sqfs /mnt/syssqfs; then
+  if mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs; then
     SQFS_MOUNT="/mnt/syssqfs"
   else
-    panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" " {ROOT_DEV}/IMAGES/system.sqfs" "     as root file system."
-  fi
-
-  # Check overlay module
-  if ! modprobe overlay; then
-    local overlay_mod="/mnt/syssqfs/SYSTEM/lib/modules/$(uname -r)/kernel/fs/overlayfs/overlay.ko"
-    [ -f "${overlay_mod}" ] && insmod "${overlay_mod}"
-  fi
-  if ! modprobe overlay; then
-    panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to load overlay" "        kernel module"
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" " {root_dev}/IMAGES/system.sqfs" "     as root file system."
   fi
 
   # Mount the final root overlay filesystem at ${rootmnt}
@@ -128,8 +95,9 @@ local_mount_root()
     if [ $? -ne 0 ]; then
       echo "... WARNING: IMGLDR MOUNT SCRIPT FAILED ..."
     fi
+    [ -e /conf/param.conf ] && . /conf/param.conf
   else
-    panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to find IMGLDR" "        mount script!" "     Cannot mount rootfs!"
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to find IMGLDR" "        mount script!" "     Cannot mount rootfs!"
   fi
 
   # Run postmount script if it exists
@@ -138,5 +106,6 @@ local_mount_root()
     if [ $? -ne 0 ]; then
       echo "... WARNING: IMGLDR POSTMOUNT SCRIPT FAILED ..."
     fi
+    [ -e /conf/param.conf ] && . /conf/param.conf
   fi
 }

@@ -313,6 +313,8 @@ function update_initramfs() {
   sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-custom.txt/' "$BOOT_DIR/config.txt"
   [ -e "$BOOT_DIR/config-custom.txt" ] || touch "$BOOT_DIR/config-custom.txt"
   rm -f "$BOOT_DIR/config-initramfs.txt" >/dev/null 2>&1
+  mkdir -p "/etc/initramfs-tools/conf.d"
+  echo "MODULES=most" > "/etc/initramfs-tools/conf.d/imgldr"
   if [[ "$distib" =~ "bullseye" ]]; then
     local suffix_long
     local suffix_short
@@ -363,8 +365,6 @@ EOF
       return 1
     fi
   elif [[ "$distib" =~ "bookworm" ]] || [[ "$distib" =~ "trixie" ]]; then
-    mkdir -p "/etc/initramfs-tools/conf.d"
-    echo "MODULES=most" > "/etc/initramfs-tools/conf.d/imgldr"
     update-initramfs -u
     if [ $? -eq 0 ]; then
       sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-initramfs.txt/' "$BOOT_DIR/config.txt"
@@ -394,6 +394,8 @@ function install_initramfs() {
   [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_functions" "/etc/initramfs-tools/scripts/imgldr_functions"
+  [ -f "/etc/initramfs-tools/scripts/imgldr_functions" ] || files_ok="false"
   chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -rf "$UNPACK_DIR"
   if [ "$files_ok" == "false" ]; then
@@ -414,6 +416,7 @@ function install_initramfs() {
 function remove_initramfs() {
   rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
+  rm -f "/etc/initramfs-tools/scripts/imgldr_functions"
   rm -f "/etc/initramfs-tools/conf.d/imgldr" >/dev/null 2>&1
   echo "removed imgldr from initramfs-tools directory."
 }
