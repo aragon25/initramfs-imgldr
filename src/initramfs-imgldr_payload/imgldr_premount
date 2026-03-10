@@ -13,8 +13,57 @@ prereqs)
 	;;
 esac
 
-if [ -f /scripts/imgldr_vars ]; then
-  . /scripts/imgldr_vars
+extract_imgldr_scripts() {
+  [ "${ROOT_MOUNT}" = "false" ] && return 0
+  imgldr_check_debug && imgldr_pretty_text "      !!! DEBUG MODE !!!" "   Debug scripts are loaded."
+  [ "${SQFS_MOUNT}" = "false" ] && return 0
+  local scripts_archive="${SQFS_MOUNT}/INFO/scripts.tar"
+  if [ -f "$scripts_archive" ]; then
+    mkdir -p /lib/imgldr
+    tar -xf "$scripts_archive" -C /lib/imgldr >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "      Failed to extract" "       imgldr scripts." " Corrupted system.sqfs image!"
+    fi
+    chown -R 0:0 /lib/imgldr
+    chmod -R +x /lib/imgldr
+    rm -f /lib/imgldr/debug
+    imgldr_check_debug >/dev/null 2>&1
+  else
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "Failed to find imgldr scripts." " Corrupted system.sqfs image!"
+  fi
+  
+}
+
+get_variables() {
+  BOOT="imgldr"
+  if [ "${ROOT_MOUNT}" != "false" ] && [ "${SQFS_MOUNT}" = "false" ] && [ -f "${ROOT_MOUNT}/sbin/init" ]; then
+    imgldr_pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
+    BOOT="local"
+    imgldr_check_debug && imgldr_pretty_text "      !!! DEBUG MODE !!!" "    Force imgldr boot..." && BOOT="imgldr"
+  elif [ "${SQFS_MOUNT}" = "false" ]; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
+  fi
+}
+
+run_imgldr_premount() {
+  local premount_script="/lib/imgldr/premount"
+  if [ -f "$premount_script" ]; then
+    /bin/sh -c "$premount_script"
+    if [ $? -ne 0 ]; then
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr premount script failed!"
+    fi
+  fi
+}
+
+export_variables() {
+  mkdir -p /conf
+  touch /conf/param.conf
+  echo "BOOT=$BOOT" >> "/conf/param.conf"
+}
+
+# Load imgldr functions
+if [ -f /scripts/imgldr_functions ]; then
+  . /scripts/imgldr_functions
 else
   echo "... ERROR: IMGLDR FAILED TO LOAD FUNCTIONS ..."
   if command -v setsid >/dev/null 2>&1; then
@@ -26,55 +75,24 @@ else
   else
     sh -i </dev/console >/dev/console 2>&1
   fi
+  echo "Rebooting in 5 seconds..."
+  sleep 5
+  reboot -f
 fi
 
-get_variables() {
-  [ "${ROOT_MOUNT}" = "false" ] && return 0
-  if [ "${SQFS_MOUNT}" != "false" ]; then
-    BOOT="imgldr"
-  else
-    if [ -f "${ROOT_MOUNT}/sbin/init" ]; then
-      imgldr_pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
-      BOOT="local"
-    else
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
-    fi
-  fi
-}
+# Variables to be exported to others scripts
+export ROOT_CMDLINE="___ROOT_CMDLINE___"
+export ROOT_DEV="___ROOT_DEV___"
+export BOOT_DEV="___BOOT_DEV___"
+export ROOT_MOUNT="false"
+export BOOT_MOUNT="false"
+export SQFS_MOUNT="false"
 
-extract_imgldr_scripts() {
-  [ "${SQFS_MOUNT}" = "false" ] && return 0
-  local scripts_archive="${SQFS_MOUNT}/INFO/scripts.tar"
-  if [ -f "$scripts_archive" ]; then
-    mkdir -p /usr/share/imgldr
-    tar -xf "$scripts_archive" -C /usr/share/imgldr >/dev/null 2>&1 || echo "... WARNING: IMGLDR FAILED TO EXTRACT SCRIPTS ARCHIVE ..."
-    chown -R 0:0 /usr/share/imgldr
-    chmod -R +x /usr/share/imgldr
-  else
-    echo "... WARNING: IMGLDR SCRIPTS ARCHIVE NOT FOUND ..."
-  fi
-}
-
-run_imgldr_premount() {
-  [ "${SQFS_MOUNT}" = "false" ] && return 0
-  local premount_script="/usr/share/imgldr/premount"
-  if [ -f "$premount_script" ]; then
-    /bin/sh -c "$premount_script"
-    if [ $? -ne 0 ]; then
-      echo "... WARNING: IMGLDR PREMOUNT SCRIPT FAILED ..."
-    fi
-  fi
-}
-
-export_variables() {
-  mkdir -p /conf
-  touch /conf/param.conf
-  echo "BOOT=$BOOT" >> "/conf/param.conf"
-}
-
+imgldr_get_root_cmdline
+imgldr_get_devices
 imgldr_mount_fs
-get_variables
 extract_imgldr_scripts
+get_variables
 run_imgldr_premount
 imgldr_umount_fs
 export_variables

@@ -6,7 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Raspbian Trixie support
-- early reboot for auto-reboot
 
 ### Changed
 - splitted into kiosk-os and initramfs-imgldr

@@ -42,6 +42,7 @@ imgldr_pretty_text() {
     printf "%s  %-30s  %s\n" "##" "$i" "##"
   done
   printf '%s  %-30s  %s\n%s\n' "##" "" "##" "######################################"
+  sleep 2
 }
 
 imgldr_shell_console() {
@@ -54,6 +55,7 @@ imgldr_shell_console() {
   else
     sh -i </dev/console >/dev/console 2>&1
   fi
+  imgldr_do_reboot
 }
 
 imgldr_panic_pretty() {
@@ -62,7 +64,9 @@ imgldr_panic_pretty() {
   echo " "
   echo "What would you do?"
   echo "enter console? (c), reboot? (r), poweroff? (p)"
-  while [ "${response}" != "c" ] && [ "${response}" != "r" ] && [ "${response}" != "p" ]; do
+  imgldr_check_debug && echo "DEBUGMODE option: continue boot? (b)"
+  while [ "${response}" != "c" ] && [ "${response}" != "r" ] && [ "${response}" != "p" ] && 
+        ( ! imgldr_check_debug || ( imgldr_check_debug && [ "${response}" != "b" ] ) ); do
     read -n 1 -s response
   done
   if [ "$response" = "c" ]; then
@@ -89,7 +93,7 @@ imgldr_mount_fs() {
       if mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs; then
         SQFS_MOUNT="/mnt/syssqfs"
       else
-        echo "... WARNING: IMGLDR FAILED TO MOUNT SQUASHFS IMAGE ..."
+        imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount system.sqfs." " Corrupted system.sqfs image!" "   Cannot continue booting!"
       fi
     fi
   else
@@ -100,10 +104,10 @@ imgldr_mount_fs() {
     if mount -w $BOOT_DEV /mnt/tmpboot; then
       BOOT_MOUNT="/mnt/tmpboot"
     else
-      echo "... WARNING: IMGLDR FAILED TO MOUNT BOOTFS ..."
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
     fi
   else
-    echo "... WARNING: IMGLDR FAILED TO FIND BOOTFS PARTITION ..."
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to find boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
   fi
 }
 
@@ -142,6 +146,21 @@ imgldr_check_fs() {
   fi
 }
 
+imgldr_check_debug() {
+  [ -f /lib/imgldr/debug ] && return 0
+  local scripts_archive="${ROOT_MOUNT}/IMAGES/debug.tar"
+  if [ -f "$scripts_archive" ]; then
+    mkdir -p /lib/imgldr
+    touch /lib/imgldr/debug
+    tar -xf "$scripts_archive" -C /lib/imgldr >/dev/null 2>&1 || echo "... WARNING: IMGLDR FAILED TO EXTRACT DEBUG SCRIPTS ARCHIVE ..."
+    chown -R 0:0 /lib/imgldr
+    chmod -R +x /lib/imgldr
+    return 0
+  else
+    return 1
+  fi
+}
+
 imgldr_do_poweroff() {
   imgldr_umount_fs
   echo "Powering off in 5 seconds..."
@@ -155,3 +174,5 @@ imgldr_do_reboot() {
   sleep 5
   reboot -f
 }
+
+

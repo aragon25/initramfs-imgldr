@@ -384,7 +384,7 @@ function install_initramfs() {
   local files_ok="true"
   remove_initramfs >/dev/null 2>&1
   extract_files
-  if [ $? -ne 0 ]; then 
+  if [ $? -ne 0 ]; then
     echo "... Could not install imgldr to initramfs-tools directory! (extract error) ..."
     EXITCODE=1
     return 1
@@ -396,8 +396,6 @@ function install_initramfs() {
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_functions" "/etc/initramfs-tools/scripts/imgldr_functions"
   [ -f "/etc/initramfs-tools/scripts/imgldr_functions" ] || files_ok="false"
-  cp -af "$UNPACK_DIR/imgldr_vars" "/etc/initramfs-tools/scripts/imgldr_vars"
-  [ -f "/etc/initramfs-tools/scripts/imgldr_vars" ] || files_ok="false"
   chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -rf "$UNPACK_DIR"
   if [ "$files_ok" == "false" ]; then
@@ -419,7 +417,6 @@ function remove_initramfs() {
   rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
   rm -f "/etc/initramfs-tools/scripts/imgldr_functions"
-  rm -f "/etc/initramfs-tools/scripts/imgldr_vars"
   rm -f "/etc/initramfs-tools/conf.d/imgldr" >/dev/null 2>&1
   echo "removed imgldr from initramfs-tools directory."
 }

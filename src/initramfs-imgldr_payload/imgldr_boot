@@ -8,8 +8,9 @@
 
 . /scripts/local
 
-if [ -f /scripts/imgldr_vars ]; then
-  . /scripts/imgldr_vars
+# Load imgldr functions
+if [ -f /scripts/imgldr_functions ]; then
+  . /scripts/imgldr_functions
 else
   echo "... ERROR: IMGLDR FAILED TO LOAD FUNCTIONS ..."
   if command -v setsid >/dev/null 2>&1; then
@@ -21,10 +22,25 @@ else
   else
     sh -i </dev/console >/dev/console 2>&1
   fi
+  echo "Rebooting in 5 seconds..."
+  sleep 5
+  reboot -f
 fi
+
+# Variables to be exported to others scripts
+export ROOT_CMDLINE="___ROOT_CMDLINE___"
+export ROOT_DEV="___ROOT_DEV___"
+export BOOT_DEV="___BOOT_DEV___"
+export ROOT_MOUNT="false"
+export BOOT_MOUNT="false"
+export SQFS_MOUNT="false"
 
 local_mount_root()
 {
+  # Get variables from cmdline and devices
+  imgldr_get_root_cmdline
+  imgldr_get_devices
+
   local_top
   if [ -z "${ROOT}" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
@@ -33,8 +49,8 @@ local_mount_root()
   ROOT="${DEV}"
   local root_dev="${ROOT}"
   local boot_dev="${ROOT%?}1"
-  local mount_script="/usr/share/imgldr/mount"
-  local postmount_script="/usr/share/imgldr/postmount"
+  local mount_script="/lib/imgldr/mount"
+  local postmount_script="/lib/imgldr/postmount"
 
   # Get the root filesystem type if not set
   if [ -z "${ROOTFSTYPE}" ] || [ "${ROOTFSTYPE}" = auto ]; then
@@ -60,40 +76,17 @@ local_mount_root()
   # Create directories for mountpoints
   mkdir -p /mnt/tmproot /mnt/tmpboot /mnt/syssqfs
 
-  # Mount rootfs to /mnt/tmproot
-  if [ "${FSTYPE}" != "unknown" ]; then
-    if mount -t ${FSTYPE} ${root_dev} /mnt/tmproot >/dev/null 2>&1; then
-      ROOT_MOUNT="/mnt/tmproot"
-    else
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${root_dev}"
-    fi
-  else
-    if mount ${root_dev} /mnt/tmproot >/dev/null 2>&1; then
-      ROOT_MOUNT="/mnt/tmproot"
-    else
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      root file system!" "${root_dev}"
-    fi
-  fi
+  # Mount the root and boot devices and system.sqfs
+  imgldr_mount_fs
 
-  # Mount bootfs to /mnt/tmpboot
-  if mount ${boot_dev} /mnt/tmpboot >/dev/null 2>&1; then
-    BOOT_MOUNT="/mnt/tmpboot"
-  else
-    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" "      boot file system!" "${boot_dev}"
-  fi
+  # check if the filesystems are mounted correctly
+  imgldr_check_fs
 
-  # Mount system.sqfs image
-  if mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs; then
-    SQFS_MOUNT="/mnt/syssqfs"
-  else
-    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       Failed to mount" " {root_dev}/IMAGES/system.sqfs" "     as root file system."
-  fi
-
-  # Mount the final root overlay filesystem at ${rootmnt}
+  # Mount the final root filesystem at ${rootmnt}
   if [ -f "$mount_script" ]; then
     /bin/sh -c "$mount_script"
     if [ $? -ne 0 ]; then
-      echo "... WARNING: IMGLDR MOUNT SCRIPT FAILED ..."
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr mount script failed!"
     fi
     [ -e /conf/param.conf ] && . /conf/param.conf
   else
@@ -108,4 +101,17 @@ local_mount_root()
     fi
     [ -e /conf/param.conf ] && . /conf/param.conf
   fi
+
+  # check if init script is found in the new root filesystem
+  [ -z "${init}" ] && init="/sbin/init"
+  if ! [ -f "${rootmnt}${init}" ]; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "   init script not found in" "      root filesystem!" "  Cannot continue booting!"
+  fi
+
+  unset ROOT_CMDLINE
+  unset ROOT_DEV
+  unset BOOT_DEV
+  unset ROOT_MOUNT
+  unset BOOT_MOUNT
+  unset SQFS_MOUNT
 }
