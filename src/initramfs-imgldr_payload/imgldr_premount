@@ -41,7 +41,7 @@ get_variables() {
     BOOT="local"
     imgldr_check_debug && imgldr_pretty_text "      !!! DEBUG MODE !!!" "    Force imgldr boot..." && BOOT="imgldr"
   elif [ "${SQFS_MOUNT}" = "false" ]; then
-    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!" "${ROOT_DEV}"
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!"
   fi
 }
 
