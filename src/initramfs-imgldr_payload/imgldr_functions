@@ -111,16 +111,23 @@ imgldr_mount_fs() {
   fi
 }
 
-imgldr_umount_fs() {
+imgldr_umount_sqfs() {
   local attempt
   sync >/dev/null 2>&1
-  attempt=1
   [ "$(mount | fgrep "${SQFS_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && SQFS_MOUNT="false"
-  [ "$(mount | fgrep "${ROOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && ROOT_MOUNT="false"
-  [ "$(mount | fgrep "${BOOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && BOOT_MOUNT="false"
+  attempt=1
   while [ "${SQFS_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
     umount "${SQFS_MOUNT}" >/dev/null 2>&1 && SQFS_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
   done
+  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}"
+}
+
+imgldr_umount_fs() {
+  imgldr_umount_sqfs
+  local attempt
+  sync >/dev/null 2>&1
+  [ "$(mount | fgrep "${ROOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && ROOT_MOUNT="false"
+  [ "$(mount | fgrep "${BOOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && BOOT_MOUNT="false"
   attempt=1
   while [ "${ROOT_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
     umount "${ROOT_MOUNT}" >/dev/null 2>&1 && ROOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
@@ -129,7 +136,6 @@ imgldr_umount_fs() {
   while [ "${BOOT_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
     umount "${BOOT_MOUNT}" >/dev/null 2>&1 && BOOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}"
   [ "${ROOT_MOUNT}" != "false" ] && echo "Could not umount: ${ROOT_MOUNT}"
   [ "${BOOT_MOUNT}" != "false" ] && echo "Could not umount: ${BOOT_MOUNT}"
 }

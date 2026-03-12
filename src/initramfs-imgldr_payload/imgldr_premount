@@ -31,7 +31,6 @@ extract_imgldr_scripts() {
   else
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "Failed to find imgldr scripts." " Corrupted system.sqfs image!"
   fi
-  
 }
 
 get_variables() {
@@ -46,6 +45,7 @@ get_variables() {
 }
 
 run_imgldr_premount() {
+  [ "$BOOT" != "imgldr" ] && return 0
   local premount_script="/lib/imgldr/premount"
   if [ -f "$premount_script" ]; then
     /bin/sh -c "$premount_script"
@@ -91,6 +91,7 @@ export SQFS_MOUNT="false"
 imgldr_get_root_cmdline
 imgldr_get_devices
 imgldr_mount_fs
+[ -f "${ROOT_MOUNT}/IMAGES/update_tmp" ] && . "${ROOT_MOUNT}/IMAGES/update_tmp"
 extract_imgldr_scripts
 get_variables
 run_imgldr_premount
