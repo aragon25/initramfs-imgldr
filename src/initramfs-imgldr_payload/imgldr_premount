@@ -13,10 +13,40 @@ prereqs)
 	;;
 esac
 
+get_variables() {
+  [ "${ROOT_MOUNT}" = "false" ] && return 1
+  local debug_archive="${ROOT_MOUNT}/CONFIG/imgldr_debug.tar"
+  local debug_dir="${ROOT_MOUNT}/CONFIG/imgldr_debug"
+  if [ -f "$debug_archive" ] || ls "$debug_dir/"* >/dev/null 2>&1; then
+    imgldr_pretty_text "      !!! DEBUG MODE !!!" "   Debug scripts are loaded."
+    DEBUG_MODE="true"
+    mkdir -p /lib/imgldr
+    if [ -f "$debug_archive" ]; then
+      tar -xf "$debug_archive" -C /lib/imgldr >/dev/null 2>&1 || echo "... WARNING: IMGLDR FAILED TO EXTRACT DEBUG SCRIPTS ARCHIVE ..."
+    elif ls "$debug_dir/"* >/dev/null 2>&1; then
+      ls "$debug_dir/"* >/dev/null 2>&1 && cp -rf "$debug_dir/"* /lib/imgldr/ >/dev/null 2>&1
+    fi
+    chown -R 0:0 /lib/imgldr
+    chmod -R +x /lib/imgldr
+  fi
+  if [ "${SQFS_MOUNT}" = "false" ] && [ -f "${ROOT_MOUNT}/sbin/init" ]; then
+    imgldr_pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
+    BOOT="local"
+    [ "${DEBUG_MODE}" = "true" ] && imgldr_pretty_text "      !!! DEBUG MODE !!!" "    Force imgldr boot..." && BOOT="imgldr"
+  elif [ "${SQFS_MOUNT}" = "false" ]; then
+    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!"
+  fi
+  mkdir -p /conf
+  touch /conf/param.conf
+  echo "BOOT=$BOOT" >> "/conf/param.conf"
+  echo "DEBUG_MODE=$DEBUG_MODE" >> "/conf/param.conf"
+}
+
 extract_imgldr_scripts() {
   [ "${ROOT_MOUNT}" = "false" ] && return 0
-  imgldr_check_debug && imgldr_pretty_text "      !!! DEBUG MODE !!!" "   Debug scripts are loaded."
   [ "${SQFS_MOUNT}" = "false" ] && return 0
+  [ "${BOOT}" != "imgldr" ] && return 0
+  [ "${DEBUG_MODE}" = "true" ] && return 0
   local scripts_archive="${SQFS_MOUNT}/INFO/scripts.tar"
   if [ -f "$scripts_archive" ]; then
     mkdir -p /lib/imgldr
@@ -26,40 +56,25 @@ extract_imgldr_scripts() {
     fi
     chown -R 0:0 /lib/imgldr
     chmod -R +x /lib/imgldr
-    rm -f /lib/imgldr/debug
-    imgldr_check_debug >/dev/null 2>&1
   else
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "Failed to find imgldr scripts." " Corrupted system.sqfs image!"
   fi
 }
 
-get_variables() {
-  BOOT="imgldr"
-  if [ "${ROOT_MOUNT}" != "false" ] && [ "${SQFS_MOUNT}" = "false" ] && [ -f "${ROOT_MOUNT}/sbin/init" ]; then
-    imgldr_pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
-    BOOT="local"
-    imgldr_check_debug && imgldr_pretty_text "      !!! DEBUG MODE !!!" "    Force imgldr boot..." && BOOT="imgldr"
-  elif [ "${SQFS_MOUNT}" = "false" ]; then
-    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!"
-  fi
-}
-
 run_imgldr_premount() {
-  [ "$BOOT" != "imgldr" ] && return 0
+  [ "${BOOT}" != "imgldr" ] && return 0
   local premount_script="/lib/imgldr/premount"
   if [ -f "$premount_script" ]; then
     /bin/sh -c "$premount_script"
     if [ $? -ne 0 ]; then
       imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr premount script failed!"
     fi
+    imgldr_reload_vars
   fi
 }
 
-export_variables() {
-  mkdir -p /conf
-  touch /conf/param.conf
-  echo "BOOT=$BOOT" >> "/conf/param.conf"
-}
+DEBUG_MODE="false"
+BOOT="imgldr"
 
 # Load imgldr functions
 if [ -f /scripts/imgldr_functions ]; then
@@ -80,22 +95,11 @@ else
   reboot -f
 fi
 
-# Variables to be exported to others scripts
-export ROOT_CMDLINE="___ROOT_CMDLINE___"
-export ROOT_DEV="___ROOT_DEV___"
-export BOOT_DEV="___BOOT_DEV___"
-export ROOT_MOUNT="false"
-export BOOT_MOUNT="false"
-export SQFS_MOUNT="false"
-
-imgldr_get_root_cmdline
-imgldr_get_devices
 imgldr_mount_fs
+get_variables
 [ -f "${ROOT_MOUNT}/IMAGES/update_tmp" ] && . "${ROOT_MOUNT}/IMAGES/update_tmp"
 extract_imgldr_scripts
-get_variables
 run_imgldr_premount
 imgldr_umount_fs
-export_variables
 
 exit 0

@@ -1,12 +1,6 @@
-imgldr_get_root_cmdline() {
-  for x in $(cat /proc/cmdline)
-  do
-    case $x in
-      root=*)
-        ROOT_CMDLINE=${x#root=}
-      ;;
-    esac
-  done
+imgldr_reload_vars() {
+  [ -e /conf/param.conf ] && . /conf/param.conf
+  imgldr_check_dev_mounts
 }
 
 imgldr_wait_for_udev() {
@@ -15,15 +9,25 @@ imgldr_wait_for_udev() {
 }
 
 imgldr_get_devices() {
-  if [ "$ROOT_CMDLINE" = "___ROOT_CMDLINE___" ]; then
+  [ "$ROOT_DEV" != "___ROOT_DEV___" ] && [ "$BOOT_DEV" != "___BOOT_DEV___" ] && return 0
+  local root_cmdline="___ROOT_CMDLINE___"
+  for x in $(cat /proc/cmdline)
+  do
+    case $x in
+      root=*)
+        root_cmdline=${x#root=}
+      ;;
+    esac
+  done
+  if [ "$root_cmdline" = "___ROOT_CMDLINE___" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
   fi
   imgldr_wait_for_udev 10
   n=0
   while [ "$n" -lt 10 ]; do
-    case "$ROOT_CMDLINE" in
+    case "$root_cmdline" in
       LABEL=* | UUID=* | PARTLABEL=* | PARTUUID=*)
-        ROOT_DEV="$(blkid -l -t "$ROOT_CMDLINE" -o device)" || ROOT_DEV="___ROOT_DEV___"
+        ROOT_DEV="$(blkid -l -t "$root_cmdline" -o device)" || ROOT_DEV="___ROOT_DEV___"
       ;;
     esac
     if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
@@ -34,6 +38,10 @@ imgldr_get_devices() {
     n=$((n+1))
     sleep 1.0
   done
+  mkdir -p /conf
+  touch /conf/param.conf
+  echo "ROOT_DEV=$ROOT_DEV" >> "/conf/param.conf"
+  echo "BOOT_DEV=$BOOT_DEV" >> "/conf/param.conf"
 }
 
 imgldr_pretty_text() {
@@ -64,9 +72,9 @@ imgldr_panic_pretty() {
   echo " "
   echo "What would you do?"
   echo "enter console? (c), reboot? (r), poweroff? (p)"
-  imgldr_check_debug && echo "DEBUGMODE option: continue boot? (b)"
+  [ "${DEBUG_MODE}" = "true" ] && echo "DEBUGMODE option: continue boot? (b)"
   while [ "${response}" != "c" ] && [ "${response}" != "r" ] && [ "${response}" != "p" ] && 
-        ( ! imgldr_check_debug || ( imgldr_check_debug && [ "${response}" != "b" ] ) ); do
+        ( [ "${DEBUG_MODE}" = "false" ] || ( [ "${DEBUG_MODE}" = "true" ] && [ "${response}" != "b" ] ) ); do
     read -n 1 -s response
   done
   if [ "$response" = "c" ]; then
@@ -80,31 +88,61 @@ imgldr_panic_pretty() {
   fi
 }
 
+imgldr_check_dev_mounts() {
+  imgldr_get_devices
+  local mounts="$(mount)"
+  if [ "$(echo "$mounts" | fgrep "${ROOT_DEV}" 2>/dev/null | wc -l)" = "0" ]; then 
+    ROOT_MOUNT="false"
+  else
+    ROOT_MOUNT="$(findmnt -n -o TARGET "$ROOT_DEV" 2>/dev/null)"
+  fi
+  if [ "$(echo "$mounts" | fgrep "${BOOT_DEV}" 2>/dev/null | wc -l)" = "0" ]; then
+    BOOT_MOUNT="false"
+  else
+    BOOT_MOUNT="$(findmnt -n -o TARGET "$BOOT_DEV" 2>/dev/null)"
+  fi
+  if [ "$(echo "$mounts" | fgrep squashfs 2>/dev/null | wc -l)" = "0" ] || [ "$(echo "$mounts" | fgrep /mnt/syssqfs 2>/dev/null | wc -l)" = "0" ]; then
+    SQFS_MOUNT="false"
+  else
+    SQFS_MOUNT="/mnt/syssqfs"
+  fi
+}
+
 imgldr_mount_fs() {
+  imgldr_get_devices
+  imgldr_check_dev_mounts
+  if ( [ "$ROOT_MOUNT" != "/mnt/tmproot" ] && [ "$ROOT_MOUNT" != "false" ] ) || 
+     ( [ "$BOOT_MOUNT" != "/mnt/tmpboot" ] && [ "$BOOT_MOUNT" != "false" ] ); then
+    imgldr_umount_fs
+  fi
   if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
-    mkdir -p /mnt/tmproot
-    if mount -w "$ROOT_DEV" /mnt/tmproot; then
-      ROOT_MOUNT="/mnt/tmproot"
-    else
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
+    if [ "$ROOT_MOUNT" = "false" ]; then
+      mkdir -p /mnt/tmproot
+      umount "/mnt/tmproot" >/dev/null 2>&1
+      mount -w "$ROOT_DEV" /mnt/tmproot >/dev/null 2>&1
+      imgldr_check_dev_mounts
+      [ "$ROOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
+      fi
     fi
-    if [ -f "${ROOT_MOUNT}/IMAGES/system.sqfs" ]; then
-      mkdir -p /mnt/syssqfs
-      if mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs; then
-        SQFS_MOUNT="/mnt/syssqfs"
-      else
-        imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount system.sqfs." " Corrupted system.sqfs image!" "   Cannot continue booting!"
+    if [ "$SQFS_MOUNT" = "false" ]; then
+      if [ -f "${ROOT_MOUNT}/IMAGES/system.sqfs" ] && modprobe squashfs; then
+        mkdir -p /mnt/syssqfs
+        umount "/mnt/syssqfs" >/dev/null 2>&1
+        mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs >/dev/null 2>&1
+        imgldr_check_dev_mounts
+        [ "$SQFS_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount system.sqfs." " Corrupted system.sqfs image!" "   Cannot continue booting!"
       fi
     fi
   else
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to find root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
   fi
-  if [ "$BOOT_DEV" != "___BOOT_DEV___" ]; then 
-    mkdir -p /mnt/tmpboot
-    if mount -w $BOOT_DEV /mnt/tmpboot; then
-      BOOT_MOUNT="/mnt/tmpboot"
-    else
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
+  if [ "$BOOT_DEV" != "___BOOT_DEV___" ]; then
+    if [ "$BOOT_MOUNT" = "false" ]; then 
+      mkdir -p /mnt/tmpboot
+      umount "/mnt/tmpboot" >/dev/null 2>&1
+      mount -w $BOOT_DEV /mnt/tmpboot >/dev/null 2>&1
+      imgldr_check_dev_mounts
+      [ "$BOOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
     fi
   else
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to find boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
@@ -114,30 +152,38 @@ imgldr_mount_fs() {
 imgldr_umount_sqfs() {
   local attempt
   sync >/dev/null 2>&1
-  [ "$(mount | fgrep "${SQFS_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && SQFS_MOUNT="false"
+  imgldr_check_dev_mounts
   attempt=1
   while [ "${SQFS_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
-    umount "${SQFS_MOUNT}" >/dev/null 2>&1 && SQFS_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
+    umount "${SQFS_MOUNT}" >/dev/null 2>&1
+    imgldr_check_dev_mounts
+    [ "${SQFS_MOUNT}" != "false" ] && { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}"
+  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}" && return 1
+  return 0
 }
 
 imgldr_umount_fs() {
-  imgldr_umount_sqfs
+  imgldr_get_devices
+  imgldr_umount_sqfs || return 1
   local attempt
   sync >/dev/null 2>&1
-  [ "$(mount | fgrep "${ROOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && ROOT_MOUNT="false"
-  [ "$(mount | fgrep "${BOOT_MOUNT}" 2>/dev/null | wc -l)" = "0" ] && BOOT_MOUNT="false"
+  imgldr_check_dev_mounts
   attempt=1
   while [ "${ROOT_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
-    umount "${ROOT_MOUNT}" >/dev/null 2>&1 && ROOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
+    umount "${ROOT_DEV}" >/dev/null 2>&1
+    imgldr_check_dev_mounts
+    [ "${ROOT_MOUNT}" != "false" ] && { sleep 1; attempt=$((attempt + 1)); }
   done
   attempt=1
   while [ "${BOOT_MOUNT}" != "false" ] && [ $attempt -le 30 ]; do
-    umount "${BOOT_MOUNT}" >/dev/null 2>&1 && BOOT_MOUNT="false" || { sleep 1; attempt=$((attempt + 1)); }
+    umount "${BOOT_DEV}" >/dev/null 2>&1
+    imgldr_check_dev_mounts
+    [ "${BOOT_MOUNT}" != "false" ] && { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "${ROOT_MOUNT}" != "false" ] && echo "Could not umount: ${ROOT_MOUNT}"
-  [ "${BOOT_MOUNT}" != "false" ] && echo "Could not umount: ${BOOT_MOUNT}"
+  [ "${ROOT_MOUNT}" != "false" ] && echo "Could not umount: ${ROOT_MOUNT}" && return 1
+  [ "${BOOT_MOUNT}" != "false" ] && echo "Could not umount: ${BOOT_MOUNT}" && return 1
+  return 0
 }
 
 imgldr_check_fs() {
@@ -149,21 +195,6 @@ imgldr_check_fs() {
   fi
   if [ -z "${SQFS_MOUNT}" ] || [ "${SQFS_MOUNT}" = "false" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "       squashfs image is" "         not mounted!" "   Cannot continue booting!"
-  fi
-}
-
-imgldr_check_debug() {
-  [ -f /lib/imgldr/debug ] && return 0
-  local scripts_archive="${ROOT_MOUNT}/IMAGES/debug.tar"
-  if [ -f "$scripts_archive" ]; then
-    mkdir -p /lib/imgldr
-    touch /lib/imgldr/debug
-    tar -xf "$scripts_archive" -C /lib/imgldr >/dev/null 2>&1 || echo "... WARNING: IMGLDR FAILED TO EXTRACT DEBUG SCRIPTS ARCHIVE ..."
-    chown -R 0:0 /lib/imgldr
-    chmod -R +x /lib/imgldr
-    return 0
-  else
-    return 1
   fi
 }
 
@@ -181,4 +212,7 @@ imgldr_do_reboot() {
   reboot -f
 }
 
-
+ROOT_MOUNT="false"
+BOOT_MOUNT="false"
+SQFS_MOUNT="false"
+imgldr_reload_vars

@@ -27,34 +27,18 @@ else
   reboot -f
 fi
 
-# Variables to be exported to others scripts
-export ROOT_CMDLINE="___ROOT_CMDLINE___"
-export ROOT_DEV="___ROOT_DEV___"
-export BOOT_DEV="___BOOT_DEV___"
-export ROOT_MOUNT="false"
-export BOOT_MOUNT="false"
-export SQFS_MOUNT="false"
-
 local_mount_root()
 {
-  # Get variables from cmdline and devices
-  imgldr_get_root_cmdline
-  imgldr_get_devices
-
   local_top
   if [ -z "${ROOT}" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "  No root device specified." " Boot arguments must include" "      a root= parameter."
   fi
   local_device_setup "${ROOT}" "root file system"
   ROOT="${DEV}"
-  local root_dev="${ROOT}"
-  local boot_dev="${ROOT%?}1"
-  local mount_script="/lib/imgldr/mount"
-  local postmount_script="/lib/imgldr/postmount"
 
   # Get the root filesystem type if not set
   if [ -z "${ROOTFSTYPE}" ] || [ "${ROOTFSTYPE}" = auto ]; then
-    FSTYPE=$(get_fstype "${root_dev}")
+    FSTYPE=$(get_fstype "${ROOT_DEV}")
   else
     FSTYPE=${ROOTFSTYPE}
   fi
@@ -62,9 +46,6 @@ local_mount_root()
   local_premount
 
   # Check needed modules
-  if ! modprobe overlay; then
-    imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "   Failed to load overlayfs" "        kernel module"
-  fi
   if ! modprobe squashfs; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to load squashfs" "        kernel module"
   fi
@@ -73,8 +54,8 @@ local_mount_root()
   fi
   checkfs ${ROOT} root "${FSTYPE}"
 
-  # Create directories for mountpoints
-  mkdir -p /mnt/tmproot /mnt/tmpboot /mnt/syssqfs
+  # Reload variables from param.conf if they were changed in premount script
+  imgldr_reload_vars
 
   # Mount the root and boot devices and system.sqfs
   imgldr_mount_fs
@@ -83,23 +64,25 @@ local_mount_root()
   imgldr_check_fs
 
   # Mount the final root filesystem at ${rootmnt}
+  local mount_script="/lib/imgldr/mount"
   if [ -f "$mount_script" ]; then
     /bin/sh -c "$mount_script"
     if [ $? -ne 0 ]; then
       imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr mount script failed!"
     fi
-    [ -e /conf/param.conf ] && . /conf/param.conf
+    imgldr_reload_vars
   else
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to find IMGLDR" "        mount script!" "     Cannot mount rootfs!"
   fi
 
   # Run postmount script if it exists
+  local postmount_script="/lib/imgldr/postmount"
   if [ -f "$postmount_script" ]; then
     /bin/sh -c "$postmount_script"
     if [ $? -ne 0 ]; then
       echo "... WARNING: IMGLDR POSTMOUNT SCRIPT FAILED ..."
     fi
-    [ -e /conf/param.conf ] && . /conf/param.conf
+    imgldr_reload_vars
   fi
 
   # check if init script is found in the new root filesystem
@@ -108,9 +91,6 @@ local_mount_root()
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "   init script not found in" "      root filesystem!" "  Cannot continue booting!"
   fi
 
-  unset ROOT_CMDLINE
-  unset ROOT_DEV
-  unset BOOT_DEV
   unset ROOT_MOUNT
   unset BOOT_MOUNT
   unset SQFS_MOUNT
