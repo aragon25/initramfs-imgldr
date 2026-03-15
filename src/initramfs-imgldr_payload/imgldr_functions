@@ -122,7 +122,6 @@ imgldr_mount_fs() {
       mount -w "$ROOT_DEV" /mnt/tmproot >/dev/null 2>&1
       imgldr_check_dev_mounts
       [ "$ROOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
-      fi
     fi
     if [ "$SQFS_MOUNT" = "false" ]; then
       if [ -f "${ROOT_MOUNT}/IMAGES/system.sqfs" ] && modprobe squashfs; then
@@ -212,6 +211,8 @@ imgldr_do_reboot() {
   reboot -f
 }
 
+ROOT_DEV="___ROOT_DEV___"
+BOOT_DEV="___BOOT_DEV___"
 ROOT_MOUNT="false"
 BOOT_MOUNT="false"
 SQFS_MOUNT="false"

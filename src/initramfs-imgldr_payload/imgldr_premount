@@ -15,6 +15,7 @@ esac
 
 get_variables() {
   [ "${ROOT_MOUNT}" = "false" ] && return 1
+  local response="x"
   local debug_archive="${ROOT_MOUNT}/CONFIG/imgldr_debug.tar"
   local debug_dir="${ROOT_MOUNT}/CONFIG/imgldr_debug"
   if [ -f "$debug_archive" ] || ls "$debug_dir/"* >/dev/null 2>&1; then
@@ -32,7 +33,27 @@ get_variables() {
   if [ "${SQFS_MOUNT}" = "false" ] && [ -f "${ROOT_MOUNT}/sbin/init" ]; then
     imgldr_pretty_text "       !!! WARNING !!!" "    system.sqfs not found!" "  running local installation" "          instead..."
     BOOT="local"
-    [ "${DEBUG_MODE}" = "true" ] && imgldr_pretty_text "      !!! DEBUG MODE !!!" "    Force imgldr boot..." && BOOT="imgldr"
+    if [ "${DEBUG_MODE}" = "true" ]; then
+      echo " "
+      echo "DEBUGMODE option: What would you do? (10sec timeout)"
+      echo "continue local? (ENTER), force imgldr boot? (i), enter console? (c), reboot? (r), poweroff? (p)"
+      while [ "${response}" != "" ] && [ "${response}" != "i" ] && [ "${response}" != "c" ] && 
+            [ "${response}" != "r" ] && [ "${response}" != "p" ]; do
+        read -n 1 -t 10 -s response
+      done
+      if [ "$response" = "i" ]; then
+        BOOT="imgldr"
+      fi
+      if [ "$response" = "c" ]; then
+        imgldr_shell_console
+      fi
+      if [ "$response" = "r" ]; then
+        imgldr_do_reboot
+      fi
+      if [ "$response" = "p" ]; then
+        imgldr_do_poweroff
+      fi
+    fi
   elif [ "${SQFS_MOUNT}" = "false" ]; then
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    system.sqfs not found!" "local installation not found!" "     nothing to boot up!"
   fi
