@@ -35,11 +35,11 @@ get_variables() {
     BOOT="local"
     if [ "${DEBUG_MODE}" = "true" ]; then
       echo " "
-      echo "DEBUGMODE option: What would you do? (10sec timeout)"
+      echo "DEBUGMODE option: What would you do?"
       echo "continue local? (ENTER), force imgldr boot? (i), enter console? (c), reboot? (r), poweroff? (p)"
       while [ "${response}" != "" ] && [ "${response}" != "i" ] && [ "${response}" != "c" ] && 
             [ "${response}" != "r" ] && [ "${response}" != "p" ]; do
-        read -n 1 -t 10 -s response
+        read -n 1 -s response
       done
       if [ "$response" = "i" ]; then
         BOOT="imgldr"
