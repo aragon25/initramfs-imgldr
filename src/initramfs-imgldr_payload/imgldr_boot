@@ -53,12 +53,25 @@ local_mount_root()
     imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "    Failed to load ${FSTYPE}" "        kernel module"
   fi
   checkfs ${ROOT} root "${FSTYPE}"
+  mkdir -p /conf
+  touch /conf/param.conf
+  echo "ROOT_FSTYPE=$FSTYPE" >> "/conf/param.conf"
 
   # Reload variables from param.conf if they were changed in premount script
   imgldr_reload_vars
 
   # Mount the root and boot devices and system.sqfs
   imgldr_mount_fs
+
+  # Run premount script if it exists
+  local premount_script="/lib/imgldr/premount"
+  if [ -f "$premount_script" ]; then
+    /bin/sh -c "$premount_script"
+    if [ $? -ne 0 ]; then
+      echo "... WARNING: IMGLDR PREMOUNT SCRIPT FAILED ..."
+    fi
+    imgldr_reload_vars
+  fi
 
   # check if the filesystems are mounted correctly
   imgldr_check_fs

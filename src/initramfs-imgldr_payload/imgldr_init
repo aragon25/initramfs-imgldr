@@ -82,13 +82,13 @@ extract_imgldr_scripts() {
   fi
 }
 
-run_imgldr_premount() {
+run_imgldr_init() {
   [ "${BOOT}" != "imgldr" ] && return 0
-  local premount_script="/lib/imgldr/premount"
-  if [ -f "$premount_script" ]; then
-    /bin/sh -c "$premount_script"
+  local init_script="/lib/imgldr/init"
+  if [ -f "$init_script" ]; then
+    /bin/sh -c "$init_script"
     if [ $? -ne 0 ]; then
-      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr premount script failed!"
+      imgldr_panic_pretty "     !!! KERNEL PANIC !!!" "imgldr init script failed!"
     fi
     imgldr_reload_vars
   fi
@@ -117,10 +117,10 @@ else
 fi
 
 imgldr_mount_fs
+[ -f "${ROOT_MOUNT}/CONFIG/update_tmp" ] && . "${ROOT_MOUNT}/CONFIG/update_tmp"
 get_variables
-[ -f "${ROOT_MOUNT}/IMAGES/update_tmp" ] && . "${ROOT_MOUNT}/IMAGES/update_tmp"
 extract_imgldr_scripts
-run_imgldr_premount
+run_imgldr_init
 imgldr_umount_fs
 
 exit 0

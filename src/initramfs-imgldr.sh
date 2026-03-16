@@ -390,13 +390,13 @@ function install_initramfs() {
     return 1
   fi
   mkdir -p "/etc/initramfs-tools/scripts/init-premount"
-  cp -af "$UNPACK_DIR/imgldr_premount" "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
-  [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_init" "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
+  [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr_init" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_functions" "/etc/initramfs-tools/scripts/imgldr_functions"
   [ -f "/etc/initramfs-tools/scripts/imgldr_functions" ] || files_ok="false"
-  chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
+  chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
   rm -rf "$UNPACK_DIR"
   if [ "$files_ok" == "false" ]; then
     echo "... Could not install imgldr to initramfs-tools directory! (copy error) ..."
@@ -414,7 +414,7 @@ function install_initramfs() {
 }
 
 function remove_initramfs() {
-  rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_premount"
+  rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
   rm -f "/etc/initramfs-tools/scripts/imgldr_functions"
   rm -f "/etc/initramfs-tools/conf.d/imgldr" >/dev/null 2>&1

@@ -101,33 +101,33 @@ imgldr_check_dev_mounts() {
   else
     BOOT_MOUNT="$(findmnt -n -o TARGET "$BOOT_DEV" 2>/dev/null)"
   fi
-  if [ "$(echo "$mounts" | fgrep squashfs 2>/dev/null | wc -l)" = "0" ] || [ "$(echo "$mounts" | fgrep /mnt/syssqfs 2>/dev/null | wc -l)" = "0" ]; then
+  if [ "$(echo "$mounts" | fgrep squashfs 2>/dev/null | wc -l)" = "0" ] || [ "$(echo "$mounts" | fgrep /mnt/sys_sqfs 2>/dev/null | wc -l)" = "0" ]; then
     SQFS_MOUNT="false"
   else
-    SQFS_MOUNT="/mnt/syssqfs"
+    SQFS_MOUNT="/mnt/sys_sqfs"
   fi
 }
 
 imgldr_mount_fs() {
   imgldr_get_devices
   imgldr_check_dev_mounts
-  if ( [ "$ROOT_MOUNT" != "/mnt/tmproot" ] && [ "$ROOT_MOUNT" != "false" ] ) || 
-     ( [ "$BOOT_MOUNT" != "/mnt/tmpboot" ] && [ "$BOOT_MOUNT" != "false" ] ); then
+  if ( [ "$ROOT_MOUNT" != "/mnt/sys_rootfs" ] && [ "$ROOT_MOUNT" != "false" ] ) || 
+     ( [ "$BOOT_MOUNT" != "/mnt/sys_bootfs" ] && [ "$BOOT_MOUNT" != "false" ] ); then
     imgldr_umount_fs
   fi
   if [ "$ROOT_DEV" != "___ROOT_DEV___" ]; then
     if [ "$ROOT_MOUNT" = "false" ]; then
-      mkdir -p /mnt/tmproot
-      umount "/mnt/tmproot" >/dev/null 2>&1
-      mount -w "$ROOT_DEV" /mnt/tmproot >/dev/null 2>&1
+      mkdir -p /mnt/sys_rootfs
+      umount "/mnt/sys_rootfs" >/dev/null 2>&1
+      mount -w "$ROOT_DEV" /mnt/sys_rootfs >/dev/null 2>&1
       imgldr_check_dev_mounts
       [ "$ROOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
     fi
     if [ "$SQFS_MOUNT" = "false" ]; then
       if [ -f "${ROOT_MOUNT}/IMAGES/system.sqfs" ] && modprobe squashfs; then
-        mkdir -p /mnt/syssqfs
-        umount "/mnt/syssqfs" >/dev/null 2>&1
-        mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/syssqfs >/dev/null 2>&1
+        mkdir -p /mnt/sys_sqfs
+        umount "/mnt/sys_sqfs" >/dev/null 2>&1
+        mount -t squashfs ${ROOT_MOUNT}/IMAGES/system.sqfs /mnt/sys_sqfs >/dev/null 2>&1
         imgldr_check_dev_mounts
         [ "$SQFS_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount system.sqfs." " Corrupted system.sqfs image!" "   Cannot continue booting!"
       fi
@@ -137,9 +137,9 @@ imgldr_mount_fs() {
   fi
   if [ "$BOOT_DEV" != "___BOOT_DEV___" ]; then
     if [ "$BOOT_MOUNT" = "false" ]; then 
-      mkdir -p /mnt/tmpboot
-      umount "/mnt/tmpboot" >/dev/null 2>&1
-      mount -w $BOOT_DEV /mnt/tmpboot >/dev/null 2>&1
+      mkdir -p /mnt/sys_bootfs
+      umount "/mnt/sys_bootfs" >/dev/null 2>&1
+      mount -w $BOOT_DEV /mnt/sys_bootfs >/dev/null 2>&1
       imgldr_check_dev_mounts
       [ "$BOOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
     fi
