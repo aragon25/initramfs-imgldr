@@ -313,8 +313,6 @@ function update_initramfs() {
   sed -i '/\[all\][^\n]*/,$!b;//{x;//p;g};//!H;$!d;x;s//&\ninclude config-custom.txt/' "$BOOT_DIR/config.txt"
   [ -e "$BOOT_DIR/config-custom.txt" ] || touch "$BOOT_DIR/config-custom.txt"
   rm -f "$BOOT_DIR/config-initramfs.txt" >/dev/null 2>&1
-  mkdir -p "/etc/initramfs-tools/conf.d"
-  echo "MODULES=most" > "/etc/initramfs-tools/conf.d/imgldr"
   if [[ "$distib" =~ "bullseye" ]]; then
     local suffix_long
     local suffix_short
@@ -390,34 +388,37 @@ function install_initramfs() {
     return 1
   fi
   mkdir -p "/etc/initramfs-tools/scripts/init-premount"
-  cp -af "$UNPACK_DIR/imgldr_init" "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
-  [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr_init" ] || files_ok="false"
+  mkdir -p "/etc/initramfs-tools/hooks"
+  mkdir -p "/etc/initramfs-tools/conf.d"
+  cp -af "$UNPACK_DIR/imgldr_hook" "/etc/initramfs-tools/hooks/imgldr"
+  [ -f "/etc/initramfs-tools/hooks/imgldr" ] || files_ok="false"
+  cp -af "$UNPACK_DIR/imgldr_init" "/etc/initramfs-tools/scripts/init-premount/imgldr"
+  [ -f "/etc/initramfs-tools/scripts/init-premount/imgldr" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_boot" "/etc/initramfs-tools/scripts/imgldr"
   [ -f "/etc/initramfs-tools/scripts/imgldr" ] || files_ok="false"
   cp -af "$UNPACK_DIR/imgldr_functions" "/etc/initramfs-tools/scripts/imgldr_functions"
   [ -f "/etc/initramfs-tools/scripts/imgldr_functions" ] || files_ok="false"
-  chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
+  chmod +x "/etc/initramfs-tools/scripts/init-premount/imgldr"
+  chmod +x "/etc/initramfs-tools/hooks/imgldr"
+  chmod -x "/etc/initramfs-tools/scripts/imgldr"
+  chmod -x "/etc/initramfs-tools/scripts/imgldr_functions"
   rm -rf "$UNPACK_DIR"
+  echo "MODULES=most" > "/etc/initramfs-tools/conf.d/imgldr"
   if [ "$files_ok" == "false" ]; then
     echo "... Could not install imgldr to initramfs-tools directory! (copy error) ..."
     remove_initramfs &>/dev/null
     EXITCODE=1
     return 1
   fi
-  if ! grep overlay /etc/initramfs-tools/modules > /dev/null; then
-    echo overlay >> /etc/initramfs-tools/modules
-  fi
-  if ! grep squashfs /etc/initramfs-tools/modules > /dev/null; then
-    echo squashfs >> /etc/initramfs-tools/modules
-  fi
   echo "installed imgldr to initramfs-tools directory."
 }
 
 function remove_initramfs() {
-  rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr_init"
+  rm -f "/etc/initramfs-tools/hooks/imgldr"
+  rm -f "/etc/initramfs-tools/scripts/init-premount/imgldr"
   rm -f "/etc/initramfs-tools/scripts/imgldr"
   rm -f "/etc/initramfs-tools/scripts/imgldr_functions"
-  rm -f "/etc/initramfs-tools/conf.d/imgldr" >/dev/null 2>&1
+  rm -f "/etc/initramfs-tools/conf.d/imgldr"
   echo "removed imgldr from initramfs-tools directory."
 }
 

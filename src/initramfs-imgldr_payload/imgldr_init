@@ -117,7 +117,11 @@ else
 fi
 
 imgldr_mount_fs
-[ -f "${ROOT_MOUNT}/CONFIG/update_tmp" ] && . "${ROOT_MOUNT}/CONFIG/update_tmp"
+if [ -f "${ROOT_MOUNT}/CONFIG/update_tmp" ]; then
+  mkdir -p /lib/imgldr_update
+  cp -f "${ROOT_MOUNT}/CONFIG/update_tmp" "/lib/imgldr_update/update_tmp"
+  . "/lib/imgldr_update/update_tmp"
+fi
 get_variables
 extract_imgldr_scripts
 run_imgldr_init

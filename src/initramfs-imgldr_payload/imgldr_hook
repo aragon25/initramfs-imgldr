@@ -1,0 +1,28 @@
+
+#!/bin/sh
+
+set -e
+
+PREREQ=""
+
+prereqs () {
+  echo "${PREREQ}"
+}
+
+case "${1}" in
+  prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_exec /bin/findmnt /bin
+copy_exec /bin/lsblk /bin
+copy_exec /sbin/parted /bin
+
+force_load overlay
+force_load squashfs
+
+exit 0

@@ -119,7 +119,7 @@ imgldr_mount_fs() {
     if [ "$ROOT_MOUNT" = "false" ]; then
       mkdir -p /mnt/sys_rootfs
       umount "/mnt/sys_rootfs" >/dev/null 2>&1
-      mount -w "$ROOT_DEV" /mnt/sys_rootfs >/dev/null 2>&1
+      mount -o rw,noatime "$ROOT_DEV" /mnt/sys_rootfs >/dev/null 2>&1
       imgldr_check_dev_mounts
       [ "$ROOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount root device." "Check if the device exists and" " is a valid root filesystem." "${ROOT_DEV}"
     fi
@@ -139,7 +139,7 @@ imgldr_mount_fs() {
     if [ "$BOOT_MOUNT" = "false" ]; then 
       mkdir -p /mnt/sys_bootfs
       umount "/mnt/sys_bootfs" >/dev/null 2>&1
-      mount -w $BOOT_DEV /mnt/sys_bootfs >/dev/null 2>&1
+      mount -o rw $BOOT_DEV /mnt/sys_bootfs >/dev/null 2>&1
       imgldr_check_dev_mounts
       [ "$BOOT_MOUNT" = "false" ] && imgldr_panic_pretty "     !!! KERNEL PANIC !!!" " Failed to mount boot device." "Check if the device exists and" " is a valid boot filesystem." "${BOOT_DEV}"
     fi
@@ -150,6 +150,7 @@ imgldr_mount_fs() {
 
 imgldr_umount_sqfs() {
   local attempt
+  local result=0
   sync >/dev/null 2>&1
   imgldr_check_dev_mounts
   attempt=1
@@ -158,14 +159,15 @@ imgldr_umount_sqfs() {
     imgldr_check_dev_mounts
     [ "${SQFS_MOUNT}" != "false" ] && { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}" && return 1
-  return 0
+  [ "${SQFS_MOUNT}" != "false" ] && echo "Could not umount: ${SQFS_MOUNT}" && result=1
+  return $result
 }
 
 imgldr_umount_fs() {
   imgldr_get_devices
   imgldr_umount_sqfs || return 1
   local attempt
+  local result=0
   sync >/dev/null 2>&1
   imgldr_check_dev_mounts
   attempt=1
@@ -180,9 +182,9 @@ imgldr_umount_fs() {
     imgldr_check_dev_mounts
     [ "${BOOT_MOUNT}" != "false" ] && { sleep 1; attempt=$((attempt + 1)); }
   done
-  [ "${ROOT_MOUNT}" != "false" ] && echo "Could not umount: ${ROOT_MOUNT}" && return 1
-  [ "${BOOT_MOUNT}" != "false" ] && echo "Could not umount: ${BOOT_MOUNT}" && return 1
-  return 0
+  [ "${ROOT_MOUNT}" != "false" ] && echo "Could not umount: ${ROOT_MOUNT}" && result=1
+  [ "${BOOT_MOUNT}" != "false" ] && echo "Could not umount: ${BOOT_MOUNT}" && result=1
+  return $result
 }
 
 imgldr_check_fs() {
